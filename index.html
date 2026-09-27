@@ -1,0 +1,1917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clawd 剪片子 · ClawdCut</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=ZCOOL+KuaiLe&display=swap" media="print" onload="this.media='all'">
+<style>
+  :root {
+    --ink: #1F1E1D;
+    --orange: #D97757;
+    --paper: #FBF6EC;
+    --font: 'ZCOOL KuaiLe', 'Hannotate SC', 'HanziPen SC', 'Yuanti SC', 'PingFang SC', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: #E9E1D2;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    font-family: var(--font); color: var(--ink);
+  }
+  .stage {
+    position: relative;
+    width: min(96vw, calc((100vh - 96px) * 16 / 9));
+    aspect-ratio: 16 / 9;
+    border: 4px solid var(--ink); border-radius: 18px; overflow: hidden;
+    box-shadow: 8px 10px 0 var(--ink);
+    background: var(--paper);
+  }
+  svg { display: block; width: 100%; height: 100%; }
+  svg text { font-family: var(--font); fill: var(--ink); }
+
+  .intro {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(31, 30, 29, .38);
+  }
+  .intro .card {
+    background: #FFFDF8; border: 4px solid var(--ink); border-radius: 26px;
+    box-shadow: 8px 10px 0 var(--ink); padding: 28px 48px 22px; text-align: center;
+  }
+  .intro h1 { margin: 0; font-size: clamp(30px, 4.4vw, 60px); font-weight: normal; letter-spacing: 2px; }
+  .intro h1 b { color: var(--orange); font-weight: normal; }
+  .intro p { margin: 6px 0 22px; color: #8A857C; font-size: clamp(14px, 1.4vw, 19px); }
+  .intro button {
+    font: inherit; font-size: clamp(18px, 2vw, 26px); color: #fff; cursor: pointer;
+    background: var(--orange); border: 4px solid var(--ink); border-radius: 999px;
+    padding: 8px 34px; box-shadow: 4px 5px 0 var(--ink);
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+  .intro button:active { transform: translateY(3px); box-shadow: 1px 2px 0 var(--ink); }
+  .intro .hint { margin-top: 14px; font-size: 14px; color: #8A857C; }
+  @keyframes pulse { 50% { transform: scale(1.06) rotate(-1.5deg); } }
+
+  .bar {
+    display: flex; align-items: center; gap: 12px;
+    width: min(96vw, calc((100vh - 96px) * 16 / 9));
+    padding: 8px 14px; background: #FFFDF8;
+    border: 3px solid var(--ink); border-radius: 999px; box-shadow: 4px 5px 0 var(--ink);
+  }
+  .bar button, .bar select {
+    font: inherit; font-size: 16px; color: var(--ink); cursor: pointer;
+    background: #FFFDF8; border: 3px solid var(--ink); border-radius: 999px; padding: 3px 14px;
+  }
+  .bar button.primary { background: var(--orange); color: #fff; min-width: 76px; }
+  .bar button:active { transform: translateY(2px); }
+  .bar input[type=range] { flex: 1; accent-color: var(--orange); cursor: pointer; }
+  .bar .time { font-variant-numeric: tabular-nums; min-width: 96px; text-align: right; }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <svg id="svg" viewBox="0 0 1600 900" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <!-- 手绘线条抖动：turbulence 的 seed 由 JS 轮换，形成 line boil -->
+      <filter id="rough" filterUnits="userSpaceOnUse" x="0" y="0" width="1600" height="900">
+        <feTurbulence id="roughNoise" type="fractalNoise" baseFrequency="0.028" numOctaves="2" seed="1" result="n"/>
+        <feDisplacementMap in="SourceGraphic" in2="n" scale="3.2" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <filter id="grain" filterUnits="userSpaceOnUse" x="0" y="0" width="1600" height="900">
+        <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/>
+        <feColorMatrix type="saturate" values="0"/>
+      </filter>
+      <pattern id="hatch" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="10" stroke="#1F1E1D" stroke-width="2.4" opacity=".28"/>
+      </pattern>
+      <clipPath id="screenClip"><rect x="829" y="124" width="526" height="296" rx="4"/></clipPath>
+      <radialGradient id="glowG">
+        <stop offset="0" stop-color="#FFFBEA" stop-opacity="1"/>
+        <stop offset=".45" stop-color="#FFE7A3" stop-opacity=".75"/>
+        <stop offset="1" stop-color="#FFE7A3" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="vigG" cx=".5" cy=".5" r=".75">
+        <stop offset=".5" stop-color="#1F1E1D" stop-opacity="0"/>
+        <stop offset="1" stop-color="#1F1E1D" stop-opacity=".9"/>
+      </radialGradient>
+      <linearGradient id="gTemp"><stop offset="0" stop-color="#8EC5F0"/><stop offset=".5" stop-color="#F4F0E8"/><stop offset="1" stop-color="#F2A65A"/></linearGradient>
+      <linearGradient id="gSat"><stop offset="0" stop-color="#C9C5BE"/><stop offset=".5" stop-color="#E9A27A"/><stop offset="1" stop-color="#E8433A"/></linearGradient>
+      <radialGradient id="gGlareCore"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="#FFF4C8" stop-opacity="0"/></radialGradient>
+      <linearGradient id="gBri"><stop offset="0" stop-color="#5A5753"/><stop offset=".7" stop-color="#F4EBD6"/><stop offset="1" stop-color="#FFFFFF"/></linearGradient>
+      <!-- 调色：饱和度 + 色温/对比度（参数由 JS 每帧写入） -->
+      <filter id="grade" filterUnits="userSpaceOnUse" x="829" y="124" width="526" height="296" color-interpolation-filters="sRGB">
+        <feColorMatrix id="gradeSat" type="saturate" values="1"/>
+        <feComponentTransfer>
+          <feFuncR id="gradeR" type="linear" slope="1" intercept="0"/>
+          <feFuncG id="gradeG" type="linear" slope="1" intercept="0"/>
+          <feFuncB id="gradeB" type="linear" slope="1" intercept="0"/>
+        </feComponentTransfer>
+      </filter>
+    </defs>
+
+    <rect width="1600" height="900" fill="#F4ECDB"/>
+    <g id="world" filter="url(#rough)">
+      <g id="shake">
+        <g id="cam">
+          <g id="desktop"></g>
+          <g id="raysA"></g>
+          <g id="appWin"></g>
+          <g id="deskClawdLayer"></g>
+          <use id="dockCover" href="#dock"/>
+          <g id="fx"></g>
+        </g>
+      </g>
+      <g id="overlay"></g>
+    </g>
+
+    <rect id="vig" width="1600" height="900" fill="url(#vigG)" opacity="0" pointer-events="none"/>
+    <rect id="flash" width="1600" height="900" fill="#FFFDF8" opacity="0" pointer-events="none"/>
+    <rect id="lbT" x="0" y="-100" width="1600" height="100" fill="#1F1E1D"/>
+    <rect id="lbB" x="0" y="900" width="1600" height="100" fill="#1F1E1D"/>
+    <rect width="1600" height="900" filter="url(#grain)" opacity=".07" style="mix-blend-mode:multiply" pointer-events="none"/>
+  </svg>
+
+  <div class="intro" id="intro">
+    <div class="card">
+      <h1>小 <b>Clawd</b> 剪片子</h1>
+      <p>一只小螃蟹的剪辑初体验</p>
+      <button id="btnStart">▶ 开始播放</button>
+      <div class="hint">🔊 建议打开声音</div>
+    </div>
+  </div>
+</div>
+
+<div class="bar">
+  <button id="btnPlay" class="primary">播放</button>
+  <button id="btnReplay">↺ 重播</button>
+  <input id="seek" type="range" min="0" max="1000" value="0">
+  <span class="time" id="time">0.0s</span>
+  <button id="btnMute" title="静音 (M)">🔊</button>
+  <select id="speed">
+    <option value="0.5">0.5×</option>
+    <option value="1" selected>1×</option>
+    <option value="1.5">1.5×</option>
+    <option value="2">2×</option>
+  </select>
+</div>
+
+<script src="vendor/gsap.min.js"></script>
+<script>
+/* ============================================================
+ * 色板 & 通用笔触
+ * ============================================================ */
+const INK = '#1F1E1D', ORANGE = '#D97757', CREAM = '#FFFDF8', PANEL = '#F7F1E6',
+      BLUE = '#A9D6EE', MINT = '#A8DCC0', YELLOW = '#F6C85F', RED = '#E85D4A', GREY = '#CFCAC0';
+const S = `stroke="${INK}" stroke-linejoin="round" stroke-linecap="round"`;
+
+const $ = id => document.getElementById(id);
+const add = (parent, html) => { parent.insertAdjacentHTML('beforeend', html); return parent.lastElementChild; };
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+let seed = 7;
+const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const textWidth = str => [...str].reduce((w, ch) => w + (ch.charCodeAt(0) > 255 ? 20 : 11), 0);
+let END = 40; // 在 build() 末尾按最后一个镜头重新计算
+// 调色面板：三根滑杆（knob 的 x 就是参数值，由代理对象 gr 驱动）
+const TRACK0 = 190, TRACK1 = 580;
+const SLIDERS = [
+  { id: 'knobTemp', key: 'temp', label: '色温', y: 215, grad: 'gTemp', from: 385 },
+  { id: 'knobSat', key: 'sat', label: '饱和度', y: 315, grad: 'gSat', from: 250 },
+  { id: 'knobBri', key: 'bri', label: '亮度', y: 415, grad: 'gBri', from: 290 },
+];
+
+/* ============================================================
+ * 小零件：云、太阳、星星、放射光
+ * ============================================================ */
+function cloud(x, y, s, fill = '#fff') {
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <path d="M-50 0 C-80 0 -80 -38 -48 -36 C-44 -68 6 -72 14 -42 C42 -60 76 -30 58 0 Z"
+      fill="${fill}" ${S} stroke-width="${5 / s}"/></g>`;
+}
+function sun(x, y, r) {
+  let rays = '';
+  for (let i = 0; i < 10; i++) {
+    const a = i / 10 * Math.PI * 2;
+    rays += `<line x1="${x + Math.cos(a) * (r + 14)}" y1="${y + Math.sin(a) * (r + 14)}"
+      x2="${x + Math.cos(a) * (r + 34)}" y2="${y + Math.sin(a) * (r + 34)}" ${S} stroke-width="5"/>`;
+  }
+  return `${rays}<circle cx="${x}" cy="${y}" r="${r}" fill="${YELLOW}" ${S} stroke-width="5"/>`;
+}
+function starPath(cx, cy, r) {
+  let d = '';
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.45 : r;
+    d += `${i ? 'L' : 'M'}${(cx + Math.cos(a) * rr).toFixed(1)} ${(cy + Math.sin(a) * rr).toFixed(1)} `;
+  }
+  return d + 'Z';
+}
+function rays(parent, id, cx, cy, n, R, fills, { soft = false } = {}) {
+  const d = ['', ''];
+  for (let i = 0; i < n; i++) {
+    const a0 = i / n * Math.PI * 2, a1 = a0 + Math.PI / n;
+    d[i % 2] += `M${cx} ${cy} L${(cx + Math.cos(a0) * R).toFixed(1)} ${(cy + Math.sin(a0) * R).toFixed(1)} L${(cx + Math.cos(a1) * R).toFixed(1)} ${(cy + Math.sin(a1) * R).toFixed(1)} Z`;
+  }
+  const line = soft ? '' : `${S} stroke-width="3"`;
+  add(parent, `<g id="${id}" opacity="0">
+    <path d="${d[0]}" fill="${fills[0]}" ${line} ${soft ? 'opacity=".85"' : ''}/>
+    <path d="${d[1]}" fill="${fills[1]}" ${line} ${soft ? 'opacity=".35"' : ''}/>
+    ${soft ? `<circle cx="${cx}" cy="${cy}" r="${R * 0.22}" fill="url(#gGlareCore)"/>` : ''}</g>`);
+  gsap.set('#' + id, { svgOrigin: `${cx} ${cy}`, scale: 0 });
+}
+
+/* ============================================================
+ * 场景 1：Mac 桌面
+ * ============================================================ */
+function dockIcon(cx, id, inner) {
+  return `<g transform="translate(${cx} 834)"><g class="ico" id="${id}">
+    <rect x="-36" y="-36" width="72" height="72" rx="18" fill="${inner.bg}" ${S} stroke-width="4.5"/>${inner.art}</g></g>`;
+}
+function menuItems(id, items, opacity) {
+  let x = 66, out = `<g id="${id}" opacity="${opacity}">`;
+  items.forEach((t, i) => {
+    out += `<text x="${x}" y="31" font-size="20" ${i === 0 ? 'font-weight="bold"' : ''}>${t}</text>`;
+    x += textWidth(t) + 30;
+  });
+  return out + '</g>';
+}
+
+function buildDesktop() {
+  let grass = '';
+  for (let i = 0; i < 18; i++) {
+    const gx = 40 + i * 92 + (i % 3) * 13, gy = 800 + (i % 4) * 16;
+    grass += `<path d="M${gx} ${gy} l4 -14 M${gx + 9} ${gy} l0 -16 M${gx + 18} ${gy} l-4 -13" ${S} stroke-width="3.5" fill="none"/>`;
+  }
+  const icons = [
+    { bg: '#9CCBEF', art: `<path d="M-14 -16 v10 M14 -16 v10" ${S} stroke-width="5"/><path d="M-16 10 Q0 24 16 10" fill="none" ${S} stroke-width="4.5"/>` },
+    { bg: CREAM, art: `<circle r="25" fill="${BLUE}" ${S} stroke-width="4"/><path d="M-7 7 L14 -14 L7 7 Z" fill="${RED}" ${S} stroke-width="3"/><path d="M-7 7 L-14 14 L7 7" fill="#fff" ${S} stroke-width="3"/>` },
+    { bg: YELLOW, art: `<path d="M-20 -14 H20 M-20 0 H20 M-20 14 H8" ${S} stroke-width="4.5"/>` },
+    { bg: '#F28B82', art: `<circle cx="-8" cy="14" r="9" fill="${INK}"/><path d="M1 14 V-20 L18 -14" fill="none" ${S} stroke-width="5"/>` },
+    { bg: '#2B2A28', art: `
+        <rect x="-27" y="-6" width="54" height="30" rx="4" fill="${CREAM}" ${S} stroke-width="4"/>
+        <g transform="rotate(-14 -27 -8)">
+          <rect x="-27" y="-24" width="54" height="15" rx="3" fill="${CREAM}" ${S} stroke-width="4"/>
+          <path d="M-18 -24 l-8 15 h9 l8 -15 Z M2 -24 l-8 15 h9 l8 -15 Z" fill="${ORANGE}"/>
+        </g>
+        <path d="M-5 1 L9 9 L-5 17 Z" fill="${ORANGE}" ${S} stroke-width="3"/>` },
+    { bg: CREAM, art: [0, 1, 2, 3, 4, 5].map(i => {
+        const a = i / 6 * Math.PI * 2, c = [RED, YELLOW, MINT, BLUE, '#C9B6F0', ORANGE][i];
+        return `<circle cx="${Math.cos(a) * 13}" cy="${Math.sin(a) * 13}" r="11" fill="${c}" ${S} stroke-width="3"/>`;
+      }).join('') },
+    { bg: '#E7E2D8', art: `<path d="M-16 -14 H16 L12 22 H-12 Z" fill="${CREAM}" ${S} stroke-width="4"/><path d="M-20 -14 H20 M-6 -20 H6 M-5 -6 V14 M5 -6 V14" ${S} stroke-width="4"/>` },
+  ];
+  const ids = ['icoFinder', 'icoWeb', 'icoNotes', 'icoMusic', 'icoCut', 'icoPhotos', 'icoTrash'];
+  let dockIcons = '';
+  icons.forEach((ic, i) => { dockIcons += dockIcon(530 + i * 90, ids[i], ic); });
+
+  $('desktop').innerHTML = `
+    <rect width="1600" height="900" fill="#F4ECDB"/>
+    ${sun(250, 230, 60)}
+    ${cloud(560, 190, 1)}${cloud(1120, 150, .8)}${cloud(880, 300, .6)}
+    <path d="M1250 260 l6 -16 l6 16 l16 6 l-16 6 l-6 16 l-6 -16 l-16 -6 Z" fill="${CREAM}" ${S} stroke-width="3"/>
+    <path d="M0 640 C200 545 420 560 620 615 C820 670 1000 560 1240 560 C1400 560 1520 600 1600 620 L1600 900 L0 900 Z" fill="#CFE6DA" ${S} stroke-width="5"/>
+    <path d="M0 770 C260 670 520 705 760 745 C1000 785 1240 690 1600 725 L1600 900 L0 900 Z" fill="${MINT}" ${S} stroke-width="5"/>
+    ${grass}
+
+    <g transform="translate(1500 130)">
+      <path d="M-40 -26 h26 l9 9 h45 v44 h-80 Z" fill="#9CCBEF" ${S} stroke-width="4"/>
+      <text y="52" text-anchor="middle" font-size="18">素材</text>
+    </g>
+    <g transform="translate(1500 262)">
+      <path d="M-26 -34 h36 l16 16 v52 h-52 Z" fill="${CREAM}" ${S} stroke-width="4"/>
+      <path d="M-6 -6 L10 4 L-6 14 Z" fill="${ORANGE}" ${S} stroke-width="3"/>
+      <text y="60" text-anchor="middle" font-size="18">vlog.mov</text>
+    </g>
+
+    <rect x="-10" y="-10" width="1620" height="56" fill="${CREAM}" ${S} stroke-width="4"/>
+    <g transform="translate(36 23)">
+      ${[0, 1, 2, 3].map(i => `<line x1="0" y1="-11" x2="0" y2="11" transform="rotate(${i * 45})" stroke="${ORANGE}" stroke-width="4.5" stroke-linecap="round"/>`).join('')}
+    </g>
+    ${menuItems('menuFinder', ['访达', '文件', '编辑', '显示', '前往', '窗口', '帮助'], 1)}
+    ${menuItems('menuApp', ['ClawdCut', '文件', '编辑', '剪辑', '标记', '导出', '窗口'], 0)}
+    <g transform="translate(1390 23)">
+      <path d="M-14 4 Q0 -10 14 4 M-8 9 Q0 2 8 9" fill="none" ${S} stroke-width="3.5"/>
+      <rect x="30" y="-8" width="32" height="16" rx="4" fill="none" ${S} stroke-width="3"/>
+      <rect x="33" y="-5" width="20" height="10" rx="2" fill="${INK}"/>
+    </g>
+    <text x="1580" y="31" font-size="20" text-anchor="end">周日 9:41</text>
+
+    <g id="cutTip" opacity="0">
+      <rect x="828" y="734" width="124" height="36" rx="10" fill="${INK}"/>
+      <path d="M882 769 L890 780 L898 769 Z" fill="${INK}"/>
+      <text x="890" y="759" text-anchor="middle" font-size="19" style="fill:#fff">ClawdCut</text>
+    </g>
+
+    <g id="dock">
+      <rect x="470" y="786" width="660" height="98" rx="28" fill="${CREAM}" fill-opacity=".94" ${S} stroke-width="5"/>
+      ${dockIcons}
+      <line x1="1025" y1="802" x2="1025" y2="866" ${S} stroke-width="3"/>
+      <circle cx="530" cy="877" r="4" fill="${INK}"/>
+      <circle id="runDot" cx="890" cy="877" r="4" fill="${INK}" opacity="0"/>
+    </g>`;
+}
+
+/* ============================================================
+ * 场景 2：ClawdCut 剪辑软件窗口（按 1:1 全屏坐标绘制，打开时缩放）
+ * ============================================================ */
+function tile(id, x, y, bg, art, label) {
+  return `<g id="${id}">
+    <rect x="${x}" y="${y}" width="150" height="96" rx="12" fill="${bg}" ${S} stroke-width="4"/>
+    <g transform="translate(${x + 75} ${y + 48})">${art}</g>
+    <text x="${x + 75}" y="${y + 122}" text-anchor="middle" font-size="17">${label}</text></g>`;
+}
+const transArt = `<rect x="-34" y="-20" width="40" height="40" rx="6" fill="${BLUE}" ${S} stroke-width="4"/>
+  <rect x="-6" y="-20" width="40" height="40" rx="6" fill="${ORANGE}" fill-opacity=".85" ${S} stroke-width="4"/>`;
+
+function pill(id, x, label) {
+  return `<g id="${id}"><rect x="${x}" y="508" width="80" height="36" rx="18" fill="${CREAM}" ${S} stroke-width="3.5"/>
+    <text x="${x + 40}" y="532" text-anchor="middle" font-size="17">${label}</text></g>`;
+}
+
+function buildApp() {
+  let ruler = '';
+  for (let x = 150, i = 0; x <= 1520; x += 40, i++) {
+    const big = i % 4 === 0;
+    ruler += `<line x1="${x}" y1="${big ? 562 : 570}" x2="${x}" y2="580" ${S} stroke-width="${big ? 3 : 2}"/>`;
+    if (big) ruler += `<text x="${x + 5}" y="572" font-size="13">${i / 2}s</text>`;
+  }
+  let wave = '';
+  for (let x = 160; x <= 780; x += 7) {
+    const a = 6 + Math.abs(Math.sin(x * 0.05) * 14 + Math.sin(x * 0.013) * 8);
+    wave += `M${x} ${783 - a} V${783 + a} `;
+  }
+
+  $('appWin').innerHTML = `
+    <rect x="42" y="44" width="1540" height="840" rx="22" fill="${INK}"/>
+    <rect x="30" y="30" width="1540" height="840" rx="22" fill="${CREAM}"/>
+    <path d="M30 84 V52 Q30 30 52 30 H1548 Q1570 30 1570 52 V84 Z" fill="#F0E6D6" ${S} stroke-width="5"/>
+    <circle cx="66" cy="57" r="9" fill="#F28B82" ${S} stroke-width="3"/>
+    <circle cx="94" cy="57" r="9" fill="${YELLOW}" ${S} stroke-width="3"/>
+    <circle cx="122" cy="57" r="9" fill="#9ED99A" ${S} stroke-width="3"/>
+    <text x="800" y="65" text-anchor="middle" font-size="22">ClawdCut — 我的第一支片子</text>
+
+    <!-- 素材库 -->
+    <rect x="56" y="104" width="560" height="372" rx="14" fill="${PANEL}" ${S} stroke-width="4"/>
+    <text id="tabBin" x="80" y="140" font-size="22" font-weight="bold">素材库</text>
+    <g id="tabGrade">
+      <rect id="tabGradeBg" x="176" y="114" width="76" height="36" rx="12" fill="${CREAM}" ${S} stroke-width="3.5"/>
+      <text id="tabGradeTx" x="214" y="140" text-anchor="middle" font-size="21" style="fill:#8A857C">调色</text>
+    </g>
+    <g id="gradePanel" opacity="0">
+      ${SLIDERS.map(s => `
+        <text x="80" y="${s.y + 8}" font-size="20">${s.label}</text>
+        <rect x="${TRACK0}" y="${s.y - 8}" width="${TRACK1 - TRACK0}" height="16" rx="8" fill="url(#${s.grad})" ${S} stroke-width="3.5"/>
+        <g id="${s.id}" transform="translate(${s.from} ${s.y})">
+          <circle r="17" fill="${CREAM}" ${S} stroke-width="4"/>
+          <path d="M-4 -7 V7 M4 -7 V7" ${S} stroke-width="3"/>
+        </g>`).join('')}
+    </g>
+    <g id="binTiles">
+    ${tile('binSky', 80, 156, '#BFE3F5', `${cloud(-8, 12, .5)}${cloud(34, -6, .35)}`, '天空.mov')}
+    ${tile('binSunrise', 250, 156, '#FFD7A3', `<path d="M-30 30 A30 30 0 0 1 30 30 Z" fill="${YELLOW}" ${S} stroke-width="4"/><path d="M-75 32 H75" ${S} stroke-width="4"/>`, '日出.mov')}
+    ${tile('binCat', 420, 156, '#E8DDF5', `<path d="M-22 -8 L-18 -30 L-4 -18 M22 -8 L18 -30 L4 -18" fill="#F4C58A" ${S} stroke-width="4"/><circle r="22" cy="4" fill="#F4C58A" ${S} stroke-width="4"/><circle cx="-8" cy="0" r="3" fill="${INK}"/><circle cx="8" cy="0" r="3" fill="${INK}"/>`, '猫猫.mov')}
+    ${tile('binTrans', 80, 300, CREAM, transArt, '交叉溶解')}
+    ${tile('binText', 250, 300, CREAM, `<text y="14" text-anchor="middle" font-size="40" font-weight="bold">Aa</text>`, '标题')}
+    ${tile('binMusic', 420, 300, '#D8EFE3', `<circle cx="-8" cy="14" r="9" fill="${INK}"/><path d="M1 14 V-20 L18 -14" fill="none" ${S} stroke-width="5"/>`, '音乐.mp3')}
+    </g>
+
+    <!-- 预览 -->
+    <rect x="640" y="104" width="904" height="372" rx="14" fill="${PANEL}" ${S} stroke-width="4"/>
+    <text x="664" y="140" font-size="22" font-weight="bold">预览</text>
+    <rect x="821" y="116" width="542" height="312" rx="10" fill="${INK}"/>
+    <g clip-path="url(#screenClip)"><g filter="url(#grade)">
+      <g id="pvA">
+        <rect x="829" y="124" width="526" height="296" fill="#BFE3F5"/>
+        ${cloud(930, 220, .8)}${cloud(1200, 190, .65)}${cloud(1080, 310, .5)}
+        <path d="M1000 170 q8 -8 16 0 q8 -8 16 0 M1060 150 q6 -6 12 0 q6 -6 12 0" fill="none" ${S} stroke-width="3.5"/>
+        <path d="M829 392 C950 360 1100 384 1355 366 V420 H829 Z" fill="${MINT}" ${S} stroke-width="4"/>
+      </g>
+      <g id="pvB" opacity="0">
+        <rect x="829" y="124" width="526" height="296" fill="#FFD7A3"/>
+        <g id="pvSun">${sun(1092, 330, 44)}</g>
+        <path d="M829 356 C950 318 1050 336 1120 356 C1200 378 1280 330 1355 338 V420 H829 Z" fill="${MINT}" ${S} stroke-width="4"/>
+      </g>
+    </g></g>
+    <path id="btnPv" d="M1002 440 L1018 450 L1002 460 Z" fill="${INK}"/>
+    <text id="tc" x="1100" y="458" text-anchor="middle" font-size="20">00:00:00:00</text>
+
+    <!-- 时间轴 -->
+    <rect x="56" y="496" width="1488" height="350" rx="14" fill="${PANEL}" ${S} stroke-width="4"/>
+    ${pill('pillSel', 76, '选择')}${pill('pillBlade', 166, '剪切')}${pill('pillSnap', 256, '吸附')}
+    <g transform="translate(1462 544)"><g id="btnExport">
+      <rect x="-68" y="-36" width="136" height="36" rx="12" fill="${ORANGE}" ${S} stroke-width="4"/>
+      <text x="0" y="-11" text-anchor="middle" font-size="19" font-weight="bold" style="fill:#fff">导出 ↗</text>
+    </g></g>
+    ${ruler}
+    <line x1="146" y1="580" x2="1530" y2="580" ${S} stroke-width="3"/>
+
+    <rect x="66" y="650" width="70" height="80" rx="10" fill="#E6DCCB" ${S} stroke-width="3.5"/>
+    <text x="101" y="697" text-anchor="middle" font-size="20">V1</text>
+    <rect x="146" y="650" width="1384" height="80" rx="8" fill="#EFE8DA"/>
+    <rect x="66" y="748" width="70" height="70" rx="10" fill="#E6DCCB" ${S} stroke-width="3.5"/>
+    <text x="101" y="790" text-anchor="middle" font-size="20">A1</text>
+    <rect x="146" y="748" width="1384" height="70" rx="8" fill="#EFE8DA"/>
+
+    <rect x="150" y="754" width="640" height="58" rx="10" fill="#D8EFE3" ${S} stroke-width="4"/>
+    <path d="${wave}" stroke="#3E9B6A" stroke-width="3" stroke-linecap="round"/>
+
+    <g id="clipA">
+      <rect x="150" y="656" width="320" height="68" rx="10" fill="${BLUE}" ${S} stroke-width="4.5"/>
+      <text x="168" y="697" font-size="19">天空.mov</text>
+      ${cloud(420, 700, .38)}
+    </g>
+    <g id="clipB">
+      <rect id="clipBSel" x="602" y="648" width="336" height="84" rx="14" fill="none" stroke="${YELLOW}" stroke-width="7" opacity="0"/>
+      <g id="clipBMain">
+        <rect x="610" y="656" width="240" height="68" rx="10" fill="#FFD08A" ${S} stroke-width="3.5"/>
+        <text x="628" y="697" font-size="19">日出.mov</text>
+        <path d="M790 712 A22 22 0 0 1 834 712 Z" fill="${YELLOW}" ${S} stroke-width="3.5"/>
+      </g>
+      <g id="clipBZzz">
+        <rect x="850" y="656" width="80" height="68" rx="10" fill="${GREY}" ${S} stroke-width="3.5"/>
+        <rect x="850" y="656" width="80" height="68" rx="10" fill="url(#hatch)"/>
+        <text x="890" y="698" text-anchor="middle" font-size="20" font-style="italic">zzz</text>
+      </g>
+      <rect id="clipBOutline" x="610" y="656" width="320" height="68" rx="10" fill="none" ${S} stroke-width="5.5"/>
+    </g>
+    <g transform="translate(470 690)"><g id="transMark">
+      <path d="M-24 -26 L0 0 L-24 26 Z M24 -26 L0 0 L24 26 Z" fill="${CREAM}" ${S} stroke-width="4"/>
+      <circle r="7" fill="${ORANGE}" ${S} stroke-width="3"/>
+    </g></g>
+    <line id="snapLine" x1="470" y1="592" x2="470" y2="834" stroke="${YELLOW}" stroke-width="7" stroke-dasharray="14 10" opacity="0"/>
+    <line id="bladeLine" x1="710" y1="636" x2="710" y2="744" stroke="${RED}" stroke-width="6" stroke-linecap="round" opacity="0"/>
+    <g id="playhead">
+      <line x1="0" y1="566" x2="0" y2="830" stroke="${RED}" stroke-width="4"/>
+      <path d="M-12 552 H12 V564 L0 578 L-12 564 Z" fill="${RED}" ${S} stroke-width="3"/>
+    </g>
+
+    <rect x="30" y="30" width="1540" height="840" rx="22" fill="none" ${S} stroke-width="6"/>
+    <g id="appRays"></g>
+    <g id="appDlg"></g>
+    <g id="appClawdLayer"></g>`;
+}
+
+/* ============================================================
+ * Clawd：手绘版橙色小螃蟹（局部坐标以脚底中心为原点）
+ * ============================================================ */
+// 手臂：肩膀在 (±56, -65)，面条手臂 + 橙色小手（和身体同色），手臂长度可伸缩（ARM0 为默认长度）
+const ARM0 = 24, SHOULDER_X = 56, SHOULDER_Y = -65;
+function arm(side, extra = '') {
+  const s = side === 'R' ? 1 : -1;
+  const scissors = side === 'R' ? `<g class="c-jaws" display="none">
+      <rect x="-26" y="-7" width="18" height="14" rx="6" fill="${RED}" ${S} stroke-width="3.5"/>
+      <path class="c-jawT" d="M6 -7 L54 -11 Q62 -6 55 -1 L6 2 Z" fill="#E6E2DA" ${S} stroke-width="3.5"/>
+      <path class="c-jawB" d="M6 -2 L55 1 Q62 6 54 11 L6 7 Z" fill="#E6E2DA" ${S} stroke-width="3.5"/>
+      <circle cx="12" cy="0" r="3.5" fill="${INK}"/>
+    </g>` : '';
+  return `<g transform="translate(${s * SHOULDER_X} ${SHOULDER_Y})"><g class="c-arm${side}">
+    <rect x="${s > 0 ? 0 : -1}" y="-22" width="1" height="44" fill="none"/>
+    <line class="c-bone${side}" x1="0" y1="0" x2="${s * ARM0}" y2="0" stroke="${INK}" stroke-width="17" stroke-linecap="round"/>
+    <line class="c-bone${side}" x1="0" y1="0" x2="${s * ARM0}" y2="0" stroke="${ORANGE}" stroke-width="8" stroke-linecap="round"/>
+    <g class="c-hand${side}">
+      ${scissors}${extra}
+      <rect class="c-finger${side}" x="${s > 0 ? 8 : -32}" y="-6" width="24" height="12" rx="6" fill="${ORANGE}" ${S} stroke-width="3.5"/>
+      <ellipse cx="${s * 3}" cy="-12" rx="6" ry="7" fill="${ORANGE}" ${S} stroke-width="3.5"/>
+      <circle r="13" fill="${ORANGE}" ${S} stroke-width="4"/>
+      <path d="M${s * -6} -6 q${s * 3} -3 ${s * 7} -1" fill="none" stroke="#F4B59E" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </g></g>`;
+}
+// 左手可以拿起一张素材卡（转场），卡片中心在手的上方
+const heldCard = `<g class="c-held" display="none"><g transform="translate(0 -44)">
+  <rect x="-54" y="-35" width="108" height="70" rx="10" fill="${CREAM}" ${S} stroke-width="5"/>${transArt}</g></g>`;
+// 墨镜（以镜片中心为原点）
+const shadesArt = `<path d="M-42 -3 L-60 -8 M42 -3 L60 -8" fill="none" ${S} stroke-width="4.5"/>
+  <rect x="-43" y="-14" width="36" height="28" rx="9" fill="${INK}"/>
+  <rect x="7" y="-14" width="36" height="28" rx="9" fill="${INK}"/>
+  <path d="M-8 -4 Q0 -9 8 -4" fill="none" ${S} stroke-width="5"/>
+  <path d="M-36 -6 l9 -4 M14 -6 l9 -4" stroke="#fff" stroke-width="3.5" stroke-linecap="round" opacity=".85"/>`;
+function clawdSVG(id, scale, withHeld) {
+  const leg = x => `<rect x="${x}" y="-28" width="12" height="28" rx="4" fill="${ORANGE}" ${S} stroke-width="4.5"/>`;
+  return `<g id="${id}">
+    <g class="c-size" transform="scale(${scale})">
+      <ellipse class="c-shadow" cx="0" cy="4" rx="58" ry="9" fill="${INK}" fill-opacity=".14"/>
+      <g class="c-hop">
+        <g class="c-breath">
+        <g class="c-squash">
+          <g class="c-legsA">${leg(-46)}${leg(14)}</g>
+          <g class="c-legsB">${leg(-26)}${leg(34)}</g>
+          ${arm('L', withHeld ? heldCard : '')}${arm('R')}
+          <rect x="-60" y="-108" width="120" height="86" rx="16" fill="${ORANGE}" ${S} stroke-width="5"/>
+          <path d="M-46 -94 Q-49 -82 -46 -70" fill="none" stroke="#F4B59E" stroke-width="6" stroke-linecap="round"/>
+          <g class="c-eyes">
+            <g class="c-eyeL"><rect x="-32" y="-90" width="14" height="26" rx="6" fill="${INK}"/><circle cx="-27" cy="-83" r="3" fill="#fff"/></g>
+            <g class="c-eyeR"><rect x="18" y="-90" width="14" height="26" rx="6" fill="${INK}"/><circle cx="23" cy="-83" r="3" fill="#fff"/></g>
+          </g>
+          <g class="c-stars" opacity="0">
+            <path d="${starPath(-25, -77, 14)}" fill="${YELLOW}" ${S} stroke-width="3.5"/>
+            <path d="${starPath(25, -77, 14)}" fill="${YELLOW}" ${S} stroke-width="3.5"/>
+          </g>
+          <path class="c-brows" d="M-38 -102 L-16 -95 M38 -102 L16 -95" fill="none" ${S} stroke-width="5" opacity="0"/>
+          <g class="c-blush" opacity=".35">
+            <ellipse cx="-42" cy="-54" rx="10" ry="5" fill="#E4574A"/>
+            <ellipse cx="42" cy="-54" rx="10" ry="5" fill="#E4574A"/>
+          </g>
+          <path class="c-smile" d="M-12 -54 Q0 -41 12 -54" fill="none" ${S} stroke-width="4.5" opacity="0"/>
+          <g class="c-grin" opacity="0">
+            <path d="M-15 -57 Q0 -31 15 -57 Z" fill="${INK}" ${S} stroke-width="3"/>
+            <path d="M-7 -44 Q0 -39 7 -44 Q0 -48 -7 -44 Z" fill="#E4574A"/>
+          </g>
+          <ellipse class="c-mouthO" cx="0" cy="-49" rx="6" ry="8" fill="${INK}" opacity="0"/>
+          <path class="c-squint" d="M-35 -89 L-19 -78 L-35 -67 M35 -89 L19 -78 L35 -67" fill="none" ${S} stroke-width="5" opacity="0"/>
+          <g class="c-shades" opacity="0"><g transform="translate(0 -79)">${shadesArt}</g></g>
+          <path class="c-sweat" d="M70 -116 q9 13 0 19 q-9 -6 0 -19 Z" fill="#BFE3F5" ${S} stroke-width="3" opacity="0"/>
+        </g>
+        </g>
+      </g>
+    </g>
+  </g>`;
+}
+
+function makeClawd(parent, id, scale, withHeld = false) {
+  add(parent, clawdSVG(id, scale, withHeld));
+  const r = $(id), q = s => r.querySelector(s), qa = s => [...r.querySelectorAll(s)];
+  const c = {
+    root: r, shadow: q('.c-shadow'), hop: q('.c-hop'), breath: q('.c-breath'), squash: q('.c-squash'),
+    legsA: q('.c-legsA'), legsB: q('.c-legsB'), armL: q('.c-armL'), armR: q('.c-armR'),
+    jaws: q('.c-jaws'), jawT: q('.c-jawT'), jawB: q('.c-jawB'),
+    eyes: q('.c-eyes'), eyeL: q('.c-eyeL'), eyeR: q('.c-eyeR'), stars: q('.c-stars'), brows: q('.c-brows'),
+    smile: q('.c-smile'), grin: q('.c-grin'), mouthO: q('.c-mouthO'), blush: q('.c-blush'), sweat: q('.c-sweat'),
+    squint: q('.c-squint'), shades: q('.c-shades'),
+    held: q('.c-held'), x: 0, y: 0, k: scale, rot: { L: 0, R: 0 }, len: { L: ARM0, R: ARM0 },
+    boneL: qa('.c-boneL'), boneR: qa('.c-boneR'), handL: q('.c-handL'), handR: q('.c-handR'),
+    fingerL: q('.c-fingerL'), fingerR: q('.c-fingerR'),
+  };
+  // 变换原点：必须在剪刀、手里的卡片隐藏时计算包围盒，否则旋转中心会偏
+  gsap.set([c.squash, c.breath], { transformOrigin: '50% 100%' });
+  gsap.set(c.hop, { transformOrigin: '50% 50%' });
+  // 手先移到默认位置，手臂包围盒的内侧边才正好是肩膀（有一个透明锚点矩形保证）
+  gsap.set(c.handL, { x: -ARM0 });
+  gsap.set(c.handR, { x: ARM0 });
+  gsap.set(c.armL, { transformOrigin: '100% 50%' });
+  gsap.set(c.armR, { transformOrigin: '0% 50%' });
+  gsap.set([c.eyeL, c.eyeR, c.shadow, c.stars, c.shades], { transformOrigin: '50% 50%' });
+  gsap.set([c.handL, c.handR], { svgOrigin: '0 0' });
+  gsap.set([c.legsA, c.legsB], { transformOrigin: '50% 0%' });
+  gsap.set(c.fingerL, { transformOrigin: '100% 50%', scaleX: 0 });
+  gsap.set(c.fingerR, { transformOrigin: '0% 50%', scaleX: 0 });
+  c.jaws.setAttribute('display', 'inline');
+  gsap.set(c.jawT, { transformOrigin: '0% 100%' });
+  gsap.set(c.jawB, { transformOrigin: '0% 0%' });
+  gsap.set(c.jaws, { transformOrigin: '0% 50%', scale: 0 });
+  c.jaws.setAttribute('display', 'none');
+  if (c.held) {
+    c.held.setAttribute('display', 'inline');
+    gsap.set(c.held, { svgOrigin: '0 0', scale: 0 });
+    c.held.setAttribute('display', 'none');
+  }
+  return c;
+}
+function place(c, x, y) { c.x = x; c.y = y; gsap.set(c.root, { x, y }); }
+
+/* ============================================================
+ * 音频：Web Audio 实时合成（音效 + BGM 都是时间轴上的 cue）
+ * ============================================================ */
+const AU = { ctx: null, master: null, bus: null, noise: null, muted: false, armed: false, idx: 0, last: 0 };
+const cues = [];
+const mtof = m => 440 * 2 ** ((m - 69) / 12);
+function cue(t, n, o = {}) { cues.push({ t, n, o }); }
+
+function audioInit() {
+  if (AU.ctx) return AU.ctx.resume();
+  const ctx = AU.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.ratio.value = 4;
+  AU.master = ctx.createGain();
+  AU.master.gain.value = AU.muted ? 0 : 0.85;
+  AU.master.connect(comp).connect(ctx.destination);
+  const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  AU.noise = buf;
+  audioCut();
+  return ctx.resume();
+}
+// 暂停 / 拖动时换一条新总线，已排程的声音随旧总线一起淡出
+function audioCut() {
+  const ctx = AU.ctx;
+  if (!ctx) return;
+  if (AU.bus) {
+    const old = AU.bus;
+    old.gain.setTargetAtTime(0, ctx.currentTime, 0.015);
+    setTimeout(() => old.disconnect(), 300);
+  }
+  AU.bus = ctx.createGain();
+  AU.bus.connect(AU.master);
+  AU.armed = false;
+}
+function lowerBound(t) {
+  let lo = 0, hi = cues.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (cues[m].t < t) lo = m + 1; else hi = m; }
+  return lo;
+}
+// 每帧由时间轴 onUpdate 驱动：把未来 120ms 内的 cue 精确排进音频时钟
+function audioTick() {
+  if (!AU.ctx || AU.ctx.state !== 'running') return;
+  const now = tl.time(), s = tl.timeScale();
+  if (tl.paused() || !tl.isActive()) { AU.armed = false; AU.last = now; return; }
+  if (!AU.armed || now < AU.last - 0.001 || now - AU.last > 0.4 * s) {
+    if (AU.armed) audioCut();
+    AU.idx = lowerBound(now - 0.01);
+    AU.armed = true;
+  }
+  const horizon = now + 0.12 * s, base = AU.ctx.currentTime + 0.01;
+  while (AU.idx < cues.length && cues[AU.idx].t < horizon) {
+    const c = cues[AU.idx++];
+    SND[c.n](base + Math.max(0, (c.t - now) / s), c.o);
+  }
+  AU.last = now;
+}
+
+function env(g, when, vol, attack, dur) {
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(vol, when + attack);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + dur);
+}
+function osc(when, { type = 'sine', f, f2, glide, dur = 0.2, vol = 0.3, attack = 0.004, filter }) {
+  const ctx = AU.ctx, o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f, when);
+  if (f2) o.frequency.exponentialRampToValueAtTime(f2, when + (glide || dur));
+  env(g, when, vol, attack, dur);
+  let node = o;
+  if (filter) {
+    const b = ctx.createBiquadFilter();
+    b.type = filter.type || 'lowpass'; b.frequency.value = filter.f; b.Q.value = filter.q || 0.7;
+    node.connect(b); node = b;
+  }
+  node.connect(g).connect(AU.bus);
+  o.start(when); o.stop(when + dur + 0.05);
+}
+function noise(when, { dur = 0.2, vol = 0.3, type = 'bandpass', f = 1000, f2, q = 1, attack = 0.003 }) {
+  const ctx = AU.ctx, s = ctx.createBufferSource(), b = ctx.createBiquadFilter(), g = ctx.createGain();
+  s.buffer = AU.noise; s.loop = true;
+  b.type = type; b.Q.value = q;
+  b.frequency.setValueAtTime(f, when);
+  if (f2) b.frequency.exponentialRampToValueAtTime(f2, when + dur);
+  env(g, when, vol, attack, dur);
+  s.connect(b).connect(g).connect(AU.bus);
+  s.start(when, Math.random() * 0.5); s.stop(when + dur + 0.05);
+}
+function sweep(when, { d, v, freqs, from, to, lp, lp2 }) {
+  const ctx = AU.ctx, g = ctx.createGain(), b = ctx.createBiquadFilter();
+  b.type = 'lowpass';
+  b.frequency.setValueAtTime(lp, when);
+  if (lp2) b.frequency.exponentialRampToValueAtTime(lp2, when + d);
+  g.gain.setValueAtTime(0, when);
+  g.gain.linearRampToValueAtTime(v, when + (from < to ? d * 0.85 : 0.15));
+  g.gain.setValueAtTime(v, when + d);
+  g.gain.linearRampToValueAtTime(0, when + d + 0.04);
+  b.connect(g).connect(AU.bus);
+  freqs.forEach(k => {
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(from * k, when);
+    o.frequency.exponentialRampToValueAtTime(to * k, when + d);
+    o.connect(b); o.start(when); o.stop(when + d + 0.1);
+  });
+}
+
+const SND = {
+  // —— 乐器 ——
+  lead: (w, o) => {
+    osc(w, { type: 'triangle', f: mtof(o.m), dur: 0.24, vol: 0.09 });
+    osc(w, { type: 'square', f: mtof(o.m), dur: 0.16, vol: 0.035, filter: { f: 2400 } });
+  },
+  strum: (w, o) => o.ms.forEach((m, i) => osc(w + i * 0.012, { type: 'triangle', f: mtof(m), dur: 0.2, vol: 0.045, filter: { f: 3000 } })),
+  bass: (w, o) => osc(w, { type: 'triangle', f: mtof(o.m), dur: 0.2, vol: 0.2 * (o.v ?? 1) }),
+  kick: w => osc(w, { f: 150, f2: 45, glide: 0.12, dur: 0.22, vol: 0.5 }),
+  snare: w => { noise(w, { dur: 0.13, vol: 0.16, f: 1800, q: 0.7 }); osc(w, { type: 'triangle', f: 200, f2: 150, dur: 0.07, vol: 0.1 }); },
+  hat: (w, o) => noise(w, { dur: 0.035, vol: 0.05 * (o.v ?? 1), type: 'highpass', f: 7000 }),
+  crash: w => noise(w, { dur: 1.3, vol: 0.14, type: 'highpass', f: 4500 }),
+  drumroll: (w, o) => {
+    const n = Math.floor(o.d / 0.055);
+    for (let i = 0; i < n; i++) noise(w + i * 0.055, { dur: 0.05, vol: 0.02 + 0.2 * (i / n) ** 1.5, f: 1800, q: 0.7 });
+  },
+  final: w => {
+    [60, 64, 67, 72].forEach((m, i) => osc(w + i * 0.03, { type: 'triangle', f: mtof(m), dur: 1.5, vol: 0.07 }));
+    osc(w, { type: 'triangle', f: mtof(48), dur: 1.3, vol: 0.22 });
+    SND.kick(w); SND.crash(w); SND.ding(w + 0.12, { f: mtof(96) });
+  },
+  // —— 角色 ——
+  boing: (w, o) => {
+    const p = o.p || 1;
+    osc(w, { f: 180 * p, f2: 620 * p, glide: 0.16, dur: 0.2, vol: 0.2 });
+    osc(w, { type: 'triangle', f: 360 * p, f2: 1240 * p, glide: 0.16, dur: 0.15, vol: 0.05 });
+  },
+  thud: (w, o) => {
+    const k = o.heavy ? 1.5 : 1;
+    osc(w, { f: 120, f2: 42, glide: 0.14, dur: 0.2 * k, vol: 0.4 * k });
+    noise(w, { dur: 0.1 * k, vol: 0.12 * k, type: 'lowpass', f: 500 });
+  },
+  tick: (w, o) => osc(w, { type: 'triangle', f: o.p ? 980 : 800, dur: 0.035, vol: 0.06 }),
+  pop: w => osc(w, { f: 480, f2: 1150, glide: 0.06, dur: 0.08, vol: 0.18 }),
+  click: w => { osc(w, { type: 'square', f: 1500, dur: 0.03, vol: 0.05 }); noise(w, { dur: 0.02, vol: 0.15, type: 'highpass', f: 3000 }); },
+  babble: (w, o) => {
+    for (let i = 0; i < o.n; i++) {
+      const f = (o.base || 640) * (1 + ((i * 7) % 5) * 0.09);
+      osc(w + i * 0.075, { type: 'square', f, f2: f * (i % 2 ? 1.25 : 0.82), glide: 0.055, dur: 0.06, vol: 0.05, filter: { type: 'bandpass', f: 1400, q: 1.5 } });
+    }
+  },
+  surprise: w => osc(w, { type: 'triangle', f: 420, f2: 1300, glide: 0.1, dur: 0.18, vol: 0.16 }),
+  wow: w => { osc(w, { type: 'triangle', f: 360, f2: 900, glide: 0.28, dur: 0.36, vol: 0.15 }); SND.sparkle(w + 0.1); },
+  // —— 动作 / 特效 ——
+  whoosh: (w, o) => {
+    const d = o.d || 0.35;
+    noise(w, { dur: d, vol: 0.22, f: o.down ? 3200 : 350, f2: o.down ? 300 : 3200, q: 1.4, attack: d * 0.5 });
+  },
+  riser: (w, o) => {
+    sweep(w, { d: o.d, v: o.v || 0.09, freqs: [1, 1.5], from: 110, to: 880, lp: 400, lp2: 5000 });
+    noise(w, { dur: o.d, vol: 0.12, type: 'highpass', f: 800, f2: 6000, attack: o.d * 0.9 });
+  },
+  drone: (w, o) => sweep(w, { d: o.d, v: 0.13, freqs: [1, 1.009, 1.5], from: 98, to: 68, lp: 450 }),
+  heartbeat: w => {
+    osc(w, { f: 70, f2: 40, glide: 0.1, dur: 0.16, vol: 0.55 });
+    osc(w + 0.19, { f: 62, f2: 38, glide: 0.1, dur: 0.14, vol: 0.4 });
+  },
+  boom: w => {
+    osc(w, { f: 90, f2: 28, glide: 0.5, dur: 0.7, vol: 0.7 });
+    noise(w, { dur: 0.45, vol: 0.28, type: 'lowpass', f: 900, f2: 120 });
+  },
+  stomp: w => { SND.boom(w); SND.thud(w, { heavy: true }); SND.boing(w + 0.07, { p: 0.55 }); },
+  splash: w => {
+    noise(w, { dur: 0.6, vol: 0.35, type: 'lowpass', f: 4000, f2: 250 });
+    for (let i = 0; i < 6; i++) osc(w + 0.05 + i * 0.045, { f: 500 + i * 140, f2: 1000 + i * 200, glide: 0.05, dur: 0.07, vol: 0.09 });
+  },
+  snap: w => {
+    noise(w, { dur: 0.025, vol: 0.3, type: 'highpass', f: 3000 });
+    osc(w + 0.03, { type: 'square', f: 1800, dur: 0.03, vol: 0.06 });
+    noise(w + 0.05, { dur: 0.03, vol: 0.25, type: 'highpass', f: 2500 });
+  },
+  drag: w => noise(w, { dur: 0.6, vol: 0.08, f: 700, q: 2, attack: 0.05 }),
+  snip: w => { noise(w, { dur: 0.04, vol: 0.2, type: 'highpass', f: 3500 }); osc(w, { type: 'square', f: 2200, dur: 0.03, vol: 0.04 }); },
+  shing: w => {
+    noise(w, { dur: 0.3, vol: 0.25, type: 'highpass', f: 5000 });
+    [2350, 3170, 4400].forEach((f, i) => osc(w, { f, dur: 0.9 - i * 0.2, vol: 0.07, attack: 0.002 }));
+  },
+  kickHit: w => {
+    osc(w, { f: 200, f2: 60, glide: 0.1, dur: 0.16, vol: 0.5 });
+    noise(w, { dur: 0.09, vol: 0.28, f: 1200, q: 0.8 });
+  },
+  ding: (w, o) => {
+    const f = o?.f || 1568;
+    [[1, 0.2, 1.2], [2.76, 0.06, 0.6], [5.4, 0.03, 0.3]].forEach(([k, v, d]) => osc(w, { f: f * k, dur: d, vol: v, attack: 0.002 }));
+  },
+  chime: w => [84, 88, 91, 96].forEach((m, i) => SND.ding(w + i * 0.08, { f: mtof(m) })),
+  sparkle: w => { for (let i = 0; i < 7; i++) osc(w + i * 0.04, { f: 2000 + ((i * 523) % 2000), dur: 0.12, vol: 0.035, attack: 0.002 }); },
+  pickup: w => { SND.pop(w); SND.sparkle(w + 0.05); },
+  stretch: w => {
+    osc(w, { f: 260, f2: 760, glide: 0.22, dur: 0.26, vol: 0.15 });
+    osc(w, { type: 'triangle', f: 520, f2: 1500, glide: 0.22, dur: 0.2, vol: 0.04 });
+  },
+  retract: w => osc(w, { f: 720, f2: 220, glide: 0.12, dur: 0.16, vol: 0.15 }),
+  slide: (w, o) => {
+    const d = o.d || 0.5;
+    noise(w, { dur: d, vol: 0.06, f: 600, f2: 2000, q: 3, attack: 0.03 });
+    for (let t = 0; t < d; t += 0.055) osc(w + t, { type: 'square', f: 1300 + t * 900, dur: 0.02, vol: 0.025 });
+  },
+  errBeep: w => [0, 0.13].forEach(k => osc(w + k, { type: 'square', f: 196, dur: 0.1, vol: 0.07, filter: { f: 1200 } })),
+  stall: w => {
+    osc(w, { type: 'square', f: 520, f2: 70, glide: 0.55, dur: 0.6, vol: 0.06, filter: { f: 1600 } });
+    osc(w, { type: 'triangle', f: 260, f2: 40, glide: 0.55, dur: 0.6, vol: 0.12 });
+  },
+  glare: w => {
+    SND.boom(w);
+    noise(w, { dur: 1.1, vol: 0.28, type: 'highpass', f: 1500, f2: 9000, attack: 0.01 });
+    [1319, 1760, 2217, 2637, 3520].forEach((f, i) => osc(w + i * 0.025, { f, dur: 1.2, vol: 0.05, attack: 0.01 }));
+    osc(w, { type: 'sawtooth', f: 330, f2: 2640, glide: 0.2, dur: 0.35, vol: 0.06, filter: { f: 5000 } });
+  },
+  shades: w => { SND.click(w); SND.ding(w + 0.03, { f: 2093 }); SND.sparkle(w + 0.08); },
+  splat: w => {
+    noise(w, { dur: 0.25, vol: 0.32, type: 'lowpass', f: 1400, f2: 200 });
+    osc(w, { f: 160, f2: 50, glide: 0.15, dur: 0.22, vol: 0.45 });
+  },
+  confetti: w => {
+    for (let i = 0; i < 18; i++) noise(w + i * 0.035 + (i % 3) * 0.012, { dur: 0.02, vol: 0.1, type: 'highpass', f: 3000 + (i % 4) * 1000 });
+  },
+};
+
+/* ---------- BGM：144 BPM 的尤克里里小调，按段落写进 cue ---------- */
+const STEP = 60 / 144 / 2;
+const CHORDS = [[48, [60, 64, 67]], [45, [57, 60, 64]], [41, [57, 60, 65]], [43, [55, 59, 62]]];
+const MELODY = [
+  [72, 0, 76, 79, 76, 0, 72, 74],
+  [76, 0, 72, 69, 72, 0, 0, 74],
+  [77, 76, 74, 72, 74, 0, 69, 72],
+  [74, 0, 79, 0, 77, 76, 74, 71],
+];
+function groove(t0, t1, { drums = true, mel = true } = {}) {
+  for (let k = 0; t0 + k * STEP < t1 - 0.02; k++) {
+    const t = t0 + k * STEP, bar = Math.floor(k / 8) % 4, s = k % 8, [root, triad] = CHORDS[bar];
+    if (s === 0 || s === 4) cue(t, 'bass', { m: root });
+    if (s === 3 || s === 7) cue(t, 'bass', { m: root + 7, v: 0.6 });
+    if (s % 2) cue(t, 'strum', { ms: triad });
+    cue(t, 'hat', { v: s % 2 ? 1 : 0.5 });
+    if (drums) {
+      if (s === 0 || s === 4 || (s === 5 && bar === 3)) cue(t, 'kick');
+      if (s === 2 || s === 6 || (s === 7 && bar === 3)) cue(t, 'snare');
+      if (s === 0 || s === 4) tl.fromTo(bump, { z: 0.016 }, { z: 0, duration: 0.3, ease: 'power2.out', immediateRender: false }, t);
+    }
+    if (mel && MELODY[bar][s]) cue(t, 'lead', { m: MELODY[bar][s] });
+  }
+}
+
+/* ============================================================
+ * 主时间轴 + 摄像机 / 画面滤镜（代理对象，统一在 onUpdate 里渲染）
+ * ============================================================ */
+const tl = gsap.timeline({ paused: true });
+
+const cam = { x: 1000, y: 700, z: 1.6, r: 0 };
+const bump = { z: 0 }; // 跟着鼓点的镜头微推
+let camPlan = { ...cam };
+function camTo(at, d, to, ease = 'power2.inOut') {
+  tl.to(cam, { ...to, duration: d, ease }, at);
+  camPlan = { ...camPlan, ...to };
+}
+function camView(c) {
+  const hw = 800 / c.z, hh = 450 / c.z;
+  return c.z <= 1 ? { x: 800, y: 450 } : { x: clamp(c.x, hw, 1600 - hw), y: clamp(c.y, hh, 900 - hh) };
+}
+// 世界坐标 → 屏幕坐标（按编排时摄像机的目标位置计算，给集中线定中心）
+function toScreen(px, py) {
+  const v = camView(camPlan);
+  return { x: 800 + (px - v.x) * camPlan.z, y: 450 + (py - v.y) * camPlan.z };
+}
+let camStr = '';
+function renderCam() {
+  const v = camView(cam);
+  const s = `translate(800 450) rotate(${cam.r.toFixed(3)}) scale(${(cam.z * (1 + bump.z)).toFixed(4)}) translate(${(-v.x).toFixed(2)} ${(-v.y).toFixed(2)})`;
+  if (s !== camStr) $('cam').setAttribute('transform', (camStr = s));
+}
+
+const look = { inv: 0, sat: 1, con: 1, bri: 1 };
+let lookStr = null;
+function renderLook() {
+  const { inv, sat, con, bri } = look;
+  const s = inv || sat !== 1 || con !== 1 || bri !== 1
+    ? `invert(${inv}) grayscale(${inv}) contrast(${con}) saturate(${sat}) brightness(${bri})` : '';
+  if (s !== lookStr) $('svg').style.filter = (lookStr = s);
+}
+
+/* ============================================================
+ * 动作库（全部写入主时间轴，支持拖动进度条来回播）
+ * ============================================================ */
+function arms(c, at, l, r, d = 0.18) {
+  c.rot.L = l; c.rot.R = r;
+  tl.to(c.armL, { rotation: l, duration: d, ease: 'back.out(2)' }, at)
+    .to(c.armR, { rotation: r, duration: d, ease: 'back.out(2)' }, at);
+}
+function land(c, at, heavy = false) {
+  tl.to(c.squash, { scaleX: heavy ? 1.45 : 1.32, scaleY: heavy ? 0.55 : 0.66, duration: 0.08, ease: 'power2.out' }, at)
+    .to(c.squash, { scaleX: 1, scaleY: 1, duration: 0.55, ease: 'elastic.out(1, 0.33)' }, at + 0.08);
+  cue(at, 'thud', { heavy });
+}
+function jump(c, at, { x, y, h = 120, d = 0.6, crouch = 0.12, armsUp = true, spin = 0, heavy = false }) {
+  const air = at + crouch;
+  tl.to(c.squash, { scaleX: 1.3, scaleY: 0.66, duration: crouch, ease: 'power2.out' }, at)
+    .to(c.root, { x, y, duration: d, ease: 'none' }, air)
+    .to(c.hop, { y: -h, duration: d / 2, ease: 'power2.out' }, air)
+    .to(c.hop, { y: 0, duration: d / 2, ease: 'power2.in' }, air + d / 2)
+    .to(c.squash, { scaleX: 0.8, scaleY: 1.28, duration: d * 0.3, ease: 'power2.out' }, air)
+    .to(c.squash, { scaleX: 1, scaleY: 1, duration: d * 0.3, ease: 'sine.inOut' }, air + d * 0.3)
+    .to(c.shadow, { scale: 0.45, duration: d / 2, ease: 'power2.out' }, air)
+    .to(c.shadow, { scale: 1, duration: d / 2, ease: 'power2.in' }, air + d / 2);
+  if (armsUp) {
+    arms(c, air, 55, -55, 0.15);
+    arms(c, air + d - 0.02, -20, 20, 0.08);
+    arms(c, air + d + 0.08, 0, 0, 0.3);
+  }
+  if (spin) {
+    tl.to(c.hop, { rotation: spin, duration: d * 0.8, ease: 'power1.inOut' }, air + d * 0.1)
+      .set(c.hop, { rotation: 0 }, air + d);
+  }
+  cue(air, 'boing', { p: 0.75 + h / 450 });
+  land(c, air + d, heavy);
+  c.x = x; c.y = y;
+  return air + d;
+}
+// 小跑：每步一个小弹跳，身体前倾，到点刹车后仰
+function run(c, at, x, d, { swing = true } = {}) {
+  const n = Math.max(2, Math.round(d / 0.14)), step = d / n, dir = Math.sign(x - c.x);
+  puffs(c.x - dir * 34, c.y, at, 0.55);
+  tl.to(c.root, { x, duration: d, ease: 'power1.inOut' }, at)
+    .to(c.hop, { rotation: dir * 9, duration: 0.1, ease: 'power2.out' }, at)
+    .to(c.hop, { y: -16, duration: step / 2, repeat: n * 2 - 1, yoyo: true, ease: 'sine.out' }, at)
+    .to(c.legsA, { y: -10, duration: step / 2, repeat: n * 2 - 1, yoyo: true, ease: 'sine.inOut' }, at)
+    .to(c.legsB, { y: -10, duration: step / 2, repeat: n * 2 - 1, yoyo: true, ease: 'sine.inOut' }, at + step / 2)
+    .to(c.hop, { rotation: -dir * 8, duration: 0.12, ease: 'power2.out' }, at + d - 0.05)
+    .to(c.hop, { rotation: 0, duration: 0.35, ease: 'back.out(3)' }, at + d + 0.07);
+  if (swing) {
+    tl.to([c.armL, c.armR], { rotation: 24, duration: step, repeat: n - 1, yoyo: true, ease: 'sine.inOut' }, at)
+      .to([c.armL, c.armR], { rotation: 0, duration: 0.15 }, at + d);
+    c.rot.L = c.rot.R = 0;
+  }
+  for (let i = 0; i < n; i++) cue(at + i * step, 'tick', { p: i % 2 });
+  c.x = x;
+}
+function hopInPlace(c, at, h = 32) {
+  tl.to(c.squash, { scaleX: 1.18, scaleY: 0.8, duration: 0.08 }, at)
+    .to(c.hop, { y: -h, duration: 0.18, ease: 'power2.out' }, at + 0.08)
+    .to(c.squash, { scaleX: 0.9, scaleY: 1.14, duration: 0.1 }, at + 0.08)
+    .to(c.hop, { y: 0, duration: 0.16, ease: 'power2.in' }, at + 0.26);
+  cue(at + 0.08, 'boing', { p: 1.3 });
+  tl.to(c.squash, { scaleX: 1.25, scaleY: 0.75, duration: 0.07, ease: 'power2.out' }, at + 0.42)
+    .to(c.squash, { scaleX: 1, scaleY: 1, duration: 0.45, ease: 'elastic.out(1, 0.35)' }, at + 0.49);
+}
+function blink(c, at) {
+  tl.to([c.eyeL, c.eyeR], { scaleY: 0.1, duration: 0.07, yoyo: true, repeat: 1, ease: 'power1.inOut' }, at);
+}
+function gaze(c, at, dx, dy) { tl.to(c.eyes, { x: dx, y: dy, duration: 0.15, ease: 'power2.out' }, at); }
+function face(el, at, on) { tl.to(el, { opacity: on ? 1 : 0, duration: 0.1 }, at); }
+function squint(c, at, on) { face(c.squint, at, on); face(c.eyes, at, !on); }
+// 甩镜：快速横摇 + 速度线 + 呼的一声
+function whip(at, d, to, angle) {
+  camTo(at, d, to, 'expo.inOut');
+  speedLines(at + d * 0.2, d * 0.6, angle, { n: 16, alpha: 0.28 });
+  cue(at + d * 0.1, 'whoosh', { d: d * 0.7 });
+}
+function starEyes(c, at, on) {
+  face(c.stars, at, on); face(c.eyes, at, !on);
+  if (on) tl.fromTo(c.stars, { scale: 0.4 }, { scale: 1, duration: 0.35, ease: 'back.out(3)', immediateRender: false }, at);
+}
+
+/* ---------- 手：伸长 / 够东西 / 戳 / 抓（橡皮面条手臂，可以伸得很长） ---------- */
+const TIP = 30; // 伸出食指时，指尖在手心前方的距离
+const normA = a => ((a + 180) % 360 + 360) % 360 - 180;
+function armLen(c, side, at, L, d = 0.25, ease = 'power3.out') {
+  const s = side === 'R' ? 1 : -1;
+  tl.to(c['bone' + side], { attr: { x2: s * L }, duration: d, ease }, at)
+    .to(c['hand' + side], { x: s * L, duration: d, ease }, at);
+  c.len[side] = L;
+}
+// 转到目标角度：取最近的等价角，避免手臂绕一大圈；upright 让左手里的卡片保持竖直
+function armRot(c, side, at, rot, d = 0.25, ease = 'power3.out', upright = false) {
+  const cur = c.rot[side];
+  rot = cur + normA(rot - cur);
+  tl.to(c['arm' + side], { rotation: rot, duration: d, ease }, at);
+  if (upright) tl.to(c.held, { rotation: -rot, duration: d, ease }, at);
+  c.rot[side] = rot;
+}
+// 让手（或指尖 / 剪刀尖，由 off 决定）够到世界坐标 (wx, wy)
+function reach(c, side, at, wx, wy, { d = 0.25, ease = 'power3.out', off = 0, upright = false } = {}) {
+  const s = side === 'R' ? 1 : -1;
+  const dx = wx - (c.x + s * SHOULDER_X * c.k), dy = wy - (c.y + SHOULDER_Y * c.k);
+  const phi = Math.atan2(dy, dx) * 180 / Math.PI;
+  armRot(c, side, at, s > 0 ? phi : phi - 180, d, ease, upright);
+  armLen(c, side, at, Math.max(ARM0, Math.hypot(dx, dy) / c.k - off), d, ease);
+}
+function point(c, side, at, on) {
+  tl.to(c['finger' + side], { scaleX: on ? 1 : 0, duration: 0.12, ease: on ? 'back.out(3)' : 'power1.in' }, at);
+}
+// 戳一下：指尖从悬停处快速按到目标再弹回
+function poke(c, side, at, wx, wy, { hover = 22 } = {}) {
+  reach(c, side, at, wx, wy, { d: 0.07, ease: 'power2.in', off: TIP - 6 });
+  reach(c, side, at + 0.07, wx, wy, { d: 0.14, ease: 'power2.out', off: TIP + hover });
+  return at + 0.07;
+}
+function grip(c, side, at, on) {
+  tl.to(c['hand' + side], { scaleX: on ? 0.8 : 1, scaleY: on ? 1.18 : 1, duration: 0.08, ease: on ? 'power2.out' : 'back.out(3)' }, at);
+}
+// 两只手弹回默认长度（橡皮筋回弹）
+function armsReset(c, at, d = 0.5) {
+  ['L', 'R'].forEach(side => {
+    armRot(c, side, at, 0, d, 'elastic.out(1, 0.45)');
+    armLen(c, side, at, ARM0, d, 'elastic.out(1, 0.45)');
+  });
+  tl.to([c.fingerL, c.fingerR], { scaleX: 0, duration: 0.1 }, at)
+    .to([c.handL, c.handR], { scaleX: 1, scaleY: 1, duration: 0.1 }, at);
+}
+
+/* ---------- 特效：对话气泡 / 拟声词 / 粒子 ---------- */
+function say(text, x, y, at, dur, { dir = 1, size = 26, snd } = {}) {
+  const g = add($('fx'), `<g><path fill="#fff" ${S} stroke-width="4"/><text font-size="${size}" text-anchor="middle">${text}</text></g>`);
+  const t = g.querySelector('text');
+  const w = Math.max(t.getComputedTextLength() + 38, 64), h = size + 26, r = 16;
+  const bx = dir > 0 ? x - 18 : x - w + 18, by = y - 18 - h;
+  const t1 = dir > 0 ? x + 26 : x - 4, t2 = dir > 0 ? x + 4 : x - 26;
+  g.querySelector('path').setAttribute('d',
+    `M${bx + r} ${by} H${bx + w - r} Q${bx + w} ${by} ${bx + w} ${by + r} V${by + h - r} Q${bx + w} ${by + h} ${bx + w - r} ${by + h}
+     H${t1} L${x} ${y} L${t2} ${by + h} H${bx + r} Q${bx} ${by + h} ${bx} ${by + h - r} V${by + r} Q${bx} ${by} ${bx + r} ${by} Z`);
+  t.setAttribute('x', bx + w / 2);
+  t.setAttribute('y', by + h / 2 + size * 0.36);
+  gsap.set(g, { svgOrigin: `${x} ${y}`, scale: 0.2, opacity: 0 });
+  tl.to(g, { scale: 1, opacity: 1, duration: 0.32, ease: 'back.out(2.6)' }, at);
+  if (dur) tl.to(g, { scale: 0.4, opacity: 0, duration: 0.15, ease: 'power2.in' }, at + dur);
+  const syll = [...text].filter(ch => !/[！？…～!?.,，。]/.test(ch)).length;
+  cue(at, snd || 'babble', { n: Math.min(7, syll), base: at < 7 ? 600 : 720 });
+}
+function sfx(text, x, y, at, { size = 54, rot = -8, color = ORANGE, dur = 0.8, snd } = {}) {
+  const g = add($('fx'), `<text x="${x}" y="${y}" font-size="${size}" text-anchor="middle" font-weight="bold"
+    style="fill:${color};stroke:${INK};stroke-width:5;paint-order:stroke;stroke-linejoin:round">${text}</text>`);
+  gsap.set(g, { svgOrigin: `${x} ${y}`, scale: 0, opacity: 1 });
+  tl.to(g, { scale: 1.35, rotation: rot, duration: 0.14, ease: 'back.out(3)' }, at)
+    .to(g, { scale: 1, duration: 0.15 }, at + 0.14);
+  if (dur) tl.to(g, { y: -24, opacity: 0, duration: 0.3, ease: 'power1.in' }, at + dur);
+  if (snd) cue(at, snd);
+}
+function puffs(x, y, at, s = 1) {
+  [-1, -0.6, -0.25, 0.25, 0.6, 1].forEach((k, i) => {
+    const p = add($('fx'), `<circle cx="${x}" cy="${y - 4}" r="${9 * s}" fill="#fff" ${S} stroke-width="3"/>`);
+    gsap.set(p, { transformOrigin: '50% 50%', scale: 0 });
+    tl.to(p, { scale: 1, x: k * 40 * s, y: -(6 + (i % 3) * 6) * s, duration: 0.2, ease: 'power2.out' }, at)
+      .to(p, { scale: 0, x: k * 80 * s, duration: 0.35, ease: 'power1.in' }, at + 0.2);
+  });
+}
+function sparks(x, y, at, { n = 10, color = YELLOW, dist = 90, len = 24, w = 5 } = {}) {
+  for (let i = 0; i < n; i++) {
+    const ang = ((i + rnd() * 0.6) / n * 360).toFixed(1);
+    const g = add($('fx'), `<g transform="translate(${x} ${y}) rotate(${ang})"><g opacity="0">
+      <line x1="0" y1="0" x2="${len}" y2="0" stroke="${INK}" stroke-width="${w + 4}" stroke-linecap="round"/>
+      <line x1="0" y1="0" x2="${len}" y2="0" stroke="${color}" stroke-width="${w}" stroke-linecap="round"/></g></g>`);
+    const sp = g.firstElementChild, dd = dist * (0.7 + rnd() * 0.6);
+    gsap.set(sp, { transformOrigin: '0% 50%', scaleX: 0.3, x: 14 });
+    tl.set(sp, { opacity: 1 }, at)
+      .to(sp, { x: dd, scaleX: 1, duration: 0.2, ease: 'power3.out' }, at)
+      .to(sp, { x: dd * 1.4, scaleX: 0, opacity: 0, duration: 0.2, ease: 'power1.in' }, at + 0.2);
+  }
+}
+function debris(x, y, at, { n = 8, colors = [CREAM, GREY], size = 12, spread = 200, up = 150, round = false } = {}) {
+  for (let i = 0; i < n; i++) {
+    const c = colors[i % colors.length];
+    const p = add($('fx'), round
+      ? `<circle cx="${x}" cy="${y}" r="${size / 2}" fill="${c}" ${S} stroke-width="3" opacity="0"/>`
+      : `<rect x="${x - size / 2}" y="${y - size * 0.4}" width="${size}" height="${size * 1.4}" rx="2" fill="${c}" ${S} stroke-width="2.5" opacity="0"/>`);
+    gsap.set(p, { transformOrigin: '50% 50%' });
+    const dx = (rnd() - 0.5) * spread * 2, hy = up * (0.6 + rnd() * 0.8), d = 0.7 + rnd() * 0.5;
+    tl.set(p, { opacity: 1 }, at)
+      .to(p, { x: dx, rotation: (rnd() - 0.5) * 900, duration: d, ease: 'power1.out' }, at)
+      .to(p, { y: -hy, duration: d * 0.4, ease: 'power2.out' }, at)
+      .to(p, { y: -hy + up * 2.6, duration: d * 0.6, ease: 'power2.in' }, at + d * 0.4)
+      .to(p, { opacity: 0, duration: 0.15 }, at + d - 0.15);
+  }
+}
+function glow(x, y, at, r = 200) {
+  const g = add($('fx'), `<circle cx="${x}" cy="${y}" r="${r}" fill="url(#glowG)" opacity="0"/>`);
+  gsap.set(g, { transformOrigin: '50% 50%', scale: 0.2 });
+  tl.set(g, { opacity: 1 }, at)
+    .to(g, { scale: 1, duration: 0.3, ease: 'power2.out' }, at)
+    .to(g, { opacity: 0, duration: 0.5 }, at + 0.2);
+}
+function rings(x, y, at, n = 3) {
+  for (let i = 0; i < n; i++) {
+    const ring = add($('fx'), `<ellipse cx="${x}" cy="${y}" rx="44" ry="26" fill="none" ${S} stroke-width="5" opacity="0"/>`);
+    gsap.set(ring, { svgOrigin: `${x} ${y}`, scale: 0.3 });
+    tl.set(ring, { opacity: 1 }, at + i * 0.08)
+      .to(ring, { scale: 3.5 + i * 1.5, opacity: 0, duration: 0.7, ease: 'power2.out' }, at + i * 0.08);
+  }
+}
+
+/* ---------- 屏幕级：震屏 / 冲击帧 / 集中线 / 速度线 / 黑边 ---------- */
+function shake(at, dur = 0.35, amp = 12) {
+  const n = Math.max(2, Math.round(dur / 0.035)), kf = [];
+  for (let i = 0; i < n; i++) {
+    const k = amp * (1 - i / n);
+    kf.push({ x: (rnd() - 0.5) * 2 * k, y: (rnd() - 0.5) * 2 * k, rotation: (rnd() - 0.5) * k * 0.1, duration: 0.035, ease: 'none' });
+  }
+  kf.push({ x: 0, y: 0, rotation: 0, duration: 0.035 });
+  tl.to('#shake', { keyframes: kf }, at);
+}
+// 冲击帧：黑白反相闪 4 帧 + 白闪淡出
+function impact(at) {
+  tl.set(look, { inv: 1, con: 2.4 }, at)
+    .set(look, { inv: 0, con: 1 }, at + 0.07)
+    .set('#flash', { opacity: 0.75 }, at + 0.07)
+    .to('#flash', { opacity: 0, duration: 0.3, ease: 'power2.out' }, at + 0.07);
+}
+function buildOverlay() {
+  const variant = () => {
+    let d = '';
+    for (let i = 0; i < 90; i++) {
+      const a = (i + rnd() * 0.8) / 90 * Math.PI * 2, w = 0.006 + rnd() * 0.014, r0 = 290 + rnd() * 210, R = 1500;
+      d += `M${(Math.cos(a) * r0).toFixed(1)} ${(Math.sin(a) * r0 * 0.68).toFixed(1)} `
+        + `L${(Math.cos(a - w) * R).toFixed(1)} ${(Math.sin(a - w) * R).toFixed(1)} `
+        + `L${(Math.cos(a + w) * R).toFixed(1)} ${(Math.sin(a + w) * R).toFixed(1)} Z`;
+    }
+    return d;
+  };
+  $('overlay').innerHTML = `<g id="focus" opacity="0"><g transform="translate(800 450)">
+    <path id="focusA" d="${variant()}" fill="${INK}"/>
+    <path id="focusB" d="${variant()}" fill="${INK}" opacity="0"/></g></g>`;
+  gsap.set('#focus', { svgOrigin: '800 450' });
+}
+function focusLines(at, dur, { x = 800, y = 450, from = 1, to = 1, alpha = 0.85 } = {}) {
+  tl.set('#focus', { opacity: alpha, x: x - 800, y: y - 450, scale: from }, at);
+  if (to !== from) tl.to('#focus', { scale: to, duration: dur, ease: 'power2.in' }, at);
+  for (let t = at, i = 0; t < at + dur - 0.01; t += 0.07, i++) {
+    tl.set('#focusA', { opacity: i % 2 ? 0 : 1 }, t).set('#focusB', { opacity: i % 2 ? 1 : 0 }, t);
+  }
+  tl.set('#focus', { opacity: 0 }, at + dur);
+}
+function speedLines(at, dur, angle, { n = 20, alpha = 0.5 } = {}) {
+  const g = add($('overlay'), `<g opacity="0"><g transform="rotate(${angle} 800 450)"></g></g>`), inner = g.firstElementChild;
+  for (let i = 0; i < n; i++) {
+    const y = (-400 + rnd() * 1700).toFixed(0), len = (160 + rnd() * 360).toFixed(0), x0 = -1500 + rnd() * 1700;
+    const l = add(inner, `<line x1="0" y1="${y}" x2="${len}" y2="${y}" stroke="${INK}" stroke-width="${(3 + rnd() * 5).toFixed(1)}" stroke-linecap="round"/>`);
+    gsap.set(l, { x: x0 });
+    tl.to(l, { x: x0 + 2000, duration: dur, ease: 'none' }, at);
+  }
+  tl.set(g, { opacity: alpha }, at).set(g, { opacity: 0 }, at + dur);
+}
+function bars(at, on, d = 0.3) {
+  tl.to('#lbT', { y: on ? 80 : 0, duration: d, ease: 'power2.inOut' }, at)
+    .to('#lbB', { y: on ? -80 : 0, duration: d, ease: 'power2.inOut' }, at);
+}
+
+/* ============================================================
+ * 预览画面 & 导出进度：由代理对象驱动（可逆，支持拖动）
+ * ============================================================ */
+const ph = { x: 150 };
+const ex = { p: 0 };
+function renderExport() {
+  $('dlgBar').setAttribute('width', 4 * ex.p);
+  $('dlgPct').textContent = Math.round(ex.p) + '%';
+}
+function renderPlayhead() {
+  gsap.set('#playhead', { x: ph.x });
+  gsap.set('#pvB', { opacity: clamp((ph.x - 430) / 80, 0, 1) });
+  gsap.set('#pvSun', { y: 80 - 230 * clamp((ph.x - 470) / 240, 0, 1) });
+  const secs = (ph.x - 150) / 80, s = Math.floor(secs), f = Math.floor((secs - s) * 24);
+  $('tc').textContent = `00:00:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`;
+}
+// 调色：knob 的 x 就是参数，灰灰的素材 → 暖、艳、有对比
+const gr = { temp: SLIDERS[0].from, sat: SLIDERS[1].from, bri: SLIDERS[2].from };
+let gradeStr = '';
+function renderGrade() {
+  const str = `${gr.temp.toFixed(1)},${gr.sat.toFixed(1)},${gr.bri.toFixed(1)}`;
+  if (str === gradeStr) return;
+  gradeStr = str;
+  SLIDERS.forEach(sl => $(sl.id).setAttribute('transform', `translate(${gr[sl.key].toFixed(1)} ${sl.y})`));
+  const span = TRACK1 - TRACK0, t = (gr.temp - 385) / 195, k = (gr.bri - TRACK0) / span;
+  // 亮度：拉到 ~2/3 之前顺带把灰蒙蒙的对比拉开；再往后开始过曝，拉满直接一片白
+  const c = 0.73 + clamp((k - 0.256) / 0.384, 0, 1) * 0.42;
+  const e = k <= 0.64 ? (k - 0.256) / 0.384 * 0.06 : 0.06 + ((k - 0.64) / 0.36) ** 2 * 0.95;
+  const b = 0.5 - 0.5 * c + e;
+  $('gradeSat').setAttribute('values', ((gr.sat - TRACK0) / span * 1.6).toFixed(3));
+  [['gradeR', c * (1 + 0.12 * t), b + 0.05 * t], ['gradeG', c, b + 0.01 * t], ['gradeB', c * (1 - 0.18 * t), b - 0.04 * t]]
+    .forEach(([id, slope, icpt]) => {
+      $(id).setAttribute('slope', slope.toFixed(3));
+      $(id).setAttribute('intercept', icpt.toFixed(3));
+    });
+}
+function renderAll() { renderCam(); renderLook(); renderPlayhead(); renderExport(); renderGrade(); }
+
+// 对话框放在软件窗口里、Clawd 图层下面：伸长的手和飞踢都能压在它上面
+function buildDialog() {
+  add($('appDlg'), `<g id="dlg" opacity="0">
+    <rect x="550" y="270" width="520" height="230" rx="24" fill="${INK}"/>
+    <rect x="540" y="258" width="520" height="230" rx="24" fill="${CREAM}" ${S} stroke-width="6"/>
+    <text id="dlgT1" x="800" y="318" text-anchor="middle" font-size="32" font-weight="bold">正在导出…</text>
+    <text id="dlgT2" x="800" y="318" text-anchor="middle" font-size="32" font-weight="bold" opacity="0" style="fill:#3E9B6A">导出完成！</text>
+    <text x="800" y="352" text-anchor="middle" font-size="18" style="fill:#8A857C">我的第一支片子.mp4 · 1080p</text>
+    <rect x="600" y="376" width="400" height="30" rx="15" fill="#EFE8DA" ${S} stroke-width="4"/>
+    <rect id="dlgBar" x="600" y="376" width="0" height="30" rx="15" fill="${ORANGE}" ${S} stroke-width="4"/>
+    <text id="dlgPct" x="800" y="452" text-anchor="middle" font-size="24">0%</text>
+    <g id="dlgCheck" opacity="0">
+      <circle cx="800" cy="444" r="26" fill="${MINT}" ${S} stroke-width="4"/>
+      <path id="dlgCheckPath" d="M787 445 L797 455 L814 432" fill="none" ${S} stroke-width="6" stroke-dasharray="50" stroke-dashoffset="50"/>
+    </g>
+  </g>`);
+  gsap.set('#dlg', { svgOrigin: '800 373', scale: 0.6 });
+}
+
+/* ============================================================
+ * 分镜编排（总长 ~37s，节奏紧凑版）
+ * ============================================================ */
+function build() {
+  buildDesktop();
+  buildApp();
+  buildDialog();
+  buildOverlay();
+  rays($('raysA'), 'raysWin', 800, 450, 20, 1100, ['#FFE7A3', '#FFF3CF']);
+  rays($('appRays'), 'raysExp', 800, 373, 22, 760, ['#FFE7A3', '#FFF3CF']);
+  rays($('appRays'), 'raysGlare', 1092, 272, 28, 1500, ['#FFFFFF', '#FFF4C8'], { soft: true });
+
+  const D = makeClawd($('deskClawdLayer'), 'deskClawd', 0.9);
+  const A = makeClawd($('appClawdLayer'), 'appClawd', 0.6, true);
+  // 飞踢时被踢飞的那副墨镜（世界坐标里的替身）
+  const flyShades = add($('fx'), `<g transform="translate(1150 430) scale(.6)"><g opacity="0">${shadesArt}</g></g>`).firstElementChild;
+  gsap.set(flyShades, { transformOrigin: '50% 50%' });
+
+  // 初始状态
+  place(D, 1000, 1020);
+  place(A, 330, 650);
+  gsap.set(A.root, { opacity: 0 });
+  gsap.set(A.hop, { y: -1100 });
+  gsap.set(A.shadow, { scale: 0.3 });
+  gsap.set('#appWin', { svgOrigin: '800 450', scale: 0.04, x: 86, y: 369, opacity: 0 });
+  gsap.set(['#desktop', '#shake'], { svgOrigin: '800 450' });
+  gsap.set(['#icoCut', '#btnExport'], { transformOrigin: '50% 100%' });
+  gsap.set(['#transMark', '#binTrans', '#clipBZzz'], { transformOrigin: '50% 50%' });
+  gsap.set('#transMark', { scale: 0 });
+  gsap.set('#cutTip', { svgOrigin: '890 780', scale: 0.3 });
+
+  /* ---------- 镜头 1：探头 + 跳上桌面 ---------- */
+  tl.to(D.root, { y: 832, duration: 0.3, ease: 'back.out(3)' }, 0.2)
+    .to(D.squash, { scaleX: 0.88, scaleY: 1.18, duration: 0.1 }, 0.2)
+    .to(D.squash, { scaleX: 1, scaleY: 1, duration: 0.4, ease: 'elastic.out(1, 0.4)' }, 0.3);
+  D.y = 832;
+  cue(0.2, 'boing', { p: 1.5 });
+  gaze(D, 0.5, -8, 0); cue(0.5, 'tick', {});
+  gaze(D, 0.64, 8, 0); cue(0.64, 'tick', { p: 1 });
+  blink(D, 0.76);
+  gaze(D, 0.84, 0, -4);
+  camTo(0.8, 0.7, { x: 700, y: 560, z: 1.25 });
+  const l1 = jump(D, 0.88, { x: 640, y: 640, h: 190, d: 0.55 });
+  tl.set('#dockCover', { opacity: 0 }, 1.2);
+  puffs(640, 640, l1, 1.2);
+  shake(l1, 0.18, 5);
+
+  /* ---------- 镜头 2：发现 ClawdCut，跑过去 ---------- */
+  const t2 = l1 + 0.15;
+  gaze(D, t2, 7, 6);
+  face(D.mouthO, t2 + 0.05, true);
+  say('！', 662, 536, t2 + 0.05, 0.45, { size: 32, snd: 'surprise' });
+  hopInPlace(D, t2 + 0.05, 42);
+  camTo(t2 + 0.05, 0.5, { x: 790, y: 690, z: 1.35 });
+  face(D.mouthO, t2 + 0.5, false);
+  face(D.brows, t2 + 0.5, true);
+  run(D, t2 + 0.52, 790, 0.4);
+
+  /* ---------- 镜头 3：手臂“嗖”地伸长 → 悬停出提示 → 双击戳图标 ---------- */
+  const ICO = [890, 812], r3 = t2 + 0.95;
+  camTo(r3 - 0.05, 0.5, { x: 850, y: 700, z: 1.5 });
+  gaze(D, r3, 6, 7);
+  point(D, 'R', r3, true);
+  reach(D, 'R', r3 + 0.02, ...ICO, { d: 0.28, ease: 'back.out(1.6)', off: TIP + 22 });
+  cue(r3 + 0.02, 'stretch');
+  tl.to('#cutTip', { opacity: 1, scale: 1, duration: 0.22, ease: 'back.out(2)' }, r3 + 0.22);
+  cue(r3 + 0.22, 'pop');
+  // 第一下：轻点
+  const k1 = poke(D, 'R', r3 + 0.45, ...ICO);
+  tl.to('#icoCut', { scaleY: 0.85, scaleX: 1.06, duration: 0.05 }, k1)
+    .to('#icoCut', { scaleY: 1, scaleX: 1, duration: 0.25, ease: 'elastic.out(1, 0.4)' }, k1 + 0.05);
+  cue(k1, 'click');
+  // 第二下：用力戳！冲击帧 + 震屏 + 集中线
+  const l2 = poke(D, 'R', r3 + 0.62, ...ICO, { hover: 40 });
+  tl.to('#icoCut', { scaleY: 0.6, scaleX: 1.18, duration: 0.08, ease: 'power2.out' }, l2)
+    .to('#icoCut', { scaleY: 1, scaleX: 1, duration: 0.5, ease: 'elastic.out(1, 0.35)' }, l2 + 0.08)
+    .to('#cutTip', { opacity: 0, scale: 0.3, duration: 0.15 }, l2);
+  tl.to(D.squash, { scaleX: 1.15, scaleY: 0.86, duration: 0.06 }, l2)
+    .to(D.squash, { scaleX: 1, scaleY: 1, duration: 0.35, ease: 'elastic.out(1, 0.4)' }, l2 + 0.06);
+  impact(l2);
+  shake(l2, 0.35, 16);
+  focusLines(l2, 0.3, { ...toScreen(...ICO), alpha: 0.8 });
+  sparks(ICO[0], ICO[1], l2, { n: 12, dist: 110 });
+  sfx('戳！', 1000, 730, l2, { size: 66, rot: 8, snd: 'stomp' });
+  camTo(l2, 0.05, { z: 1.68 }, 'power2.out');
+  camTo(l2 + 0.05, 0.35, { z: 1.5 }, 'power2.out');
+  armsReset(D, l2 + 0.18, 0.45);
+  cue(l2 + 0.18, 'retract');
+  face(D.brows, l2 + 0.18, false);
+
+  /* ---------- 镜头 4：被弹开，软件窗口带着光芒打开 ---------- */
+  const b4 = l2 + 0.3;
+  gaze(D, b4 - 0.05, -4, -4);
+  cue(b4, 'boing', { p: 0.6 });
+  jump(D, b4, { x: 720, y: 740, h: 150, d: 0.5, crouch: 0.06, spin: 360 });
+  tl.to('#icoCut', { y: -38, duration: 0.2, ease: 'power2.out' }, b4 + 0.1)
+    .to('#icoCut', { y: 0, duration: 0.2, ease: 'power2.in' }, b4 + 0.3)
+    .to('#icoCut', { y: -22, duration: 0.16, ease: 'power2.out' }, b4 + 0.5)
+    .to('#icoCut', { y: 0, duration: 0.16, ease: 'power2.in' }, b4 + 0.66);
+  tl.to('#runDot', { opacity: 1, duration: 0.1 }, b4 + 0.35)
+    .to('#menuFinder', { opacity: 0, duration: 0.2 }, b4 + 0.35)
+    .to('#menuApp', { opacity: 1, duration: 0.2 }, b4 + 0.45);
+  camTo(b4 + 0.05, 0.8, { x: 800, y: 450, z: 1 }, 'power3.inOut');
+  const w0 = b4 + 0.5;
+  tl.to('#appWin', { x: 0, y: 0, scale: 0.5, opacity: 1, duration: 0.55, ease: 'back.out(1.5)' }, w0)
+    .to('#raysWin', { opacity: 1, scale: 1, duration: 0.45, ease: 'back.out(1.5)' }, w0)
+    .to('#raysWin', { rotation: 30, duration: 1.6, ease: 'none' }, w0)
+    .to('#raysWin', { opacity: 0, scale: 1.3, duration: 0.35 }, w0 + 1.2);
+  glow(800, 450, w0, 420);
+  cue(w0, 'whoosh', { d: 0.4 });
+  cue(w0 + 0.1, 'sparkle');
+  starEyes(D, w0 + 0.3, true);
+  face(D.grin, w0 + 0.3, true);
+  say('哇！', 742, 636, w0 + 0.3, 0.6, { size: 32, snd: 'wow' });
+  hopInPlace(D, w0 + 0.35, 34);
+  starEyes(D, w0 + 0.95, false);
+  face(D.grin, w0 + 0.95, false);
+
+  /* ---------- 镜头 5：小蹲一下 → 直接跳进窗口 → 噗通 ---------- */
+  const ch = w0 + 0.85;
+  groove(0.2, ch, { drums: false });
+  face(D.brows, ch, true);
+  gaze(D, ch, 1, -7);
+  tl.to(D.squash, { scaleX: 1.3, scaleY: 0.68, duration: 0.16, ease: 'power2.out' }, ch);
+  arms(D, ch, -30, 30, 0.16);
+  const t0 = ch + 0.18, FL = 0.72, sp = t0 + FL;
+  tl.to(D.root, { x: 800, y: 470, duration: FL, ease: 'none' }, t0)
+    .to(D.hop, { y: -230, duration: FL * 0.5, ease: 'power2.out' }, t0)
+    .to(D.hop, { y: 0, duration: FL * 0.5, ease: 'power2.in' }, t0 + FL * 0.5)
+    .to(D.hop, { rotation: -360, duration: FL, ease: 'power1.inOut' }, t0)
+    .to(D.squash, { scaleX: 0.78, scaleY: 1.3, duration: 0.12, ease: 'power2.out' }, t0)
+    .to(D.squash, { scaleX: 1, scaleY: 1, duration: 0.25 }, t0 + 0.14)
+    .to(D.squash, { scaleX: 0.12, scaleY: 0.12, duration: 0.22, ease: 'power2.in' }, sp - 0.22)
+    .to(D.shadow, { opacity: 0, duration: 0.15 }, t0)
+    .set(D.root, { opacity: 0 }, sp)
+    .set(D.hop, { rotation: 0 }, sp);
+  arms(D, t0, 60, -60, 0.15);
+  face(D.brows, t0 + 0.2, false);
+  face(D.grin, t0 + 0.2, true);
+  sfx('嘿！', 640, 560, t0, { size: 44, rot: -12, dur: 0.45, snd: 'whoosh' });
+  speedLines(t0 + 0.1, FL * 0.7, -60, { n: 12, alpha: 0.25 });
+
+  // 落水
+  impact(sp);
+  shake(sp, 0.45, 18);
+  rings(800, 450, sp);
+  glow(800, 450, sp, 320);
+  debris(800, 450, sp, { n: 12, colors: [BLUE, '#DDF0FA'], size: 16, spread: 320, up: 190, round: true });
+  sfx('噗通！', 950, 330, sp, { size: 62, rot: -6, snd: 'splash' });
+  cue(sp, 'boom');
+  tl.to('#appWin', { scale: 0.55, duration: 0.1, ease: 'power2.out' }, sp)
+    .to('#appWin', { scale: 0.5, duration: 0.2, ease: 'power2.inOut' }, sp + 0.1);
+
+  /* ---------- 镜头 6：窗口放大铺满屏幕 ---------- */
+  const zi = sp + 0.15;
+  tl.to('#appWin', { scale: 1, duration: 0.6, ease: 'expo.inOut' }, zi)
+    .to('#desktop', { scale: 2.2, opacity: 0, duration: 0.55, ease: 'power2.in' }, zi);
+  cue(zi + 0.05, 'whoosh', { d: 0.5 });
+
+  /* ---------- 镜头 7：从天而降 → 摔成一张饼 → 啵地弹回来 ---------- */
+  const d0 = zi + 0.6, la = d0 + 0.35;
+  tl.set(A.root, { opacity: 1 }, d0)
+    .to(A.squash, { scaleX: 0.75, scaleY: 1.4, duration: 0.18 }, d0)
+    .to(A.hop, { y: 0, duration: 0.35, ease: 'power2.in' }, d0)
+    .to(A.shadow, { scale: 1, duration: 0.35, ease: 'power2.in' }, d0);
+  speedLines(d0, 0.35, -90, { alpha: 0.45 });
+  cue(d0, 'whoosh', { down: true, d: 0.35 });
+  tl.to(A.squash, { scaleX: 1.95, scaleY: 0.26, duration: 0.05, ease: 'power3.out' }, la)
+    .to(A.squash, { scaleX: 1.8, scaleY: 0.33, duration: 0.3, ease: 'sine.inOut' }, la + 0.05)
+    .to(A.squash, { scaleX: 0.8, scaleY: 1.32, duration: 0.1, ease: 'power2.out' }, la + 0.38)
+    .to(A.squash, { scaleX: 1, scaleY: 1, duration: 0.5, ease: 'elastic.out(1, 0.35)' }, la + 0.48)
+    .to(A.hop, { keyframes: [{ rotation: -10, duration: 0.07 }, { rotation: 9, duration: 0.09 }, { rotation: -5, duration: 0.08 }, { rotation: 0, duration: 0.1 }] }, la + 0.52);
+  squint(A, la, true);
+  squint(A, la + 0.42, false);
+  cue(la, 'splat');
+  cue(la, 'crash');
+  cue(la + 0.38, 'boing', { p: 1.4 });
+  shake(la, 0.3, 12);
+  puffs(330, 650, la, 1.3);
+  debris(330, 650, la, { n: 6, colors: [GREY, CREAM], size: 9, spread: 130, up: 90 });
+  sfx('啪叽！', 430, 560, la, { size: 52, rot: -8, color: MINT, dur: 0.55 });
+  camTo(d0 + 0.05, 0.35, { x: 460, y: 560, z: 1.35 }, 'power2.out');
+  gaze(A, la + 0.95, 7, 3);
+  say('中间空了一截？', 350, 578, la + 1.0, 0.75);
+  blink(A, la + 1.5);
+
+  /* ---------- 镜头 8：伸手抓住片段 → 往回拽 → 吸附 ---------- */
+  const dr = la + 1.65;
+  camTo(dr - 0.1, 0.5, { x: 560, y: 620, z: 1.35 });
+  run(A, dr, 420, 0.3);
+  gaze(A, dr + 0.3, 7, 5);
+  reach(A, 'R', dr + 0.32, 652, 690, { d: 0.25, ease: 'back.out(1.4)' });
+  cue(dr + 0.32, 'stretch');
+  const g1 = dr + 0.57;
+  grip(A, 'R', g1, true);
+  tl.to('#clipBSel', { opacity: 1, duration: 0.12 }, g1)
+    .to('#pillSel rect', { fill: YELLOW, duration: 0.12 }, g1);
+  cue(g1, 'click');
+  face(A.brows, g1, true);
+  face(A.sweat, g1 + 0.05, true);
+  // 身体后仰使劲拽，手臂收短，片段跟着手走
+  const pull = g1 + 0.08, PD = 0.5;
+  tl.to(A.hop, { rotation: -12, duration: 0.12, ease: 'power2.out' }, pull)
+    .to(A.squash, { scaleX: 1.12, scaleY: 0.9, duration: 0.12 }, pull)
+    .to('#clipB', { x: -140, duration: PD, ease: 'power2.inOut' }, pull);
+  reach(A, 'R', pull, 512, 690, { d: PD, ease: 'power2.inOut' });
+  cue(pull, 'drag');
+  const sn = pull + PD;
+  tl.to('#snapLine', { opacity: 1, duration: 0.05 }, sn)
+    .to('#snapLine', { opacity: 0, duration: 0.35 }, sn + 0.25)
+    .to('#pillSnap rect', { fill: YELLOW, duration: 0.05 }, sn)
+    .to('#pillSnap rect', { fill: CREAM, duration: 0.3 }, sn + 0.35)
+    .to(A.hop, { rotation: 0, duration: 0.4, ease: 'back.out(3)' }, sn)
+    .to(A.squash, { scaleX: 1, scaleY: 1, duration: 0.4, ease: 'elastic.out(1, 0.4)' }, sn);
+  sparks(470, 690, sn, { n: 10, dist: 80 });
+  shake(sn, 0.15, 6);
+  sfx('咔哒！', 470, 600, sn, { size: 48, rot: -10, color: YELLOW, snd: 'snap' });
+  armsReset(A, sn + 0.15, 0.45);
+  cue(sn + 0.15, 'retract');
+  tl.to('#clipBSel', { opacity: 0, duration: 0.2 }, sn + 0.2)
+    .to('#pillSel rect', { fill: CREAM, duration: 0.2 }, sn + 0.2);
+  face(A.sweat, sn + 0.2, false);
+  face(A.brows, sn + 0.2, false);
+
+  /* ---------- 镜头 9：手里变出剪刀 → 伸手定格一刀 ---------- */
+  gaze(A, sn + 0.25, 7, 4);
+  say('这段无聊！', 440, 578, sn + 0.3, 0.55);
+  face(A.brows, sn + 0.8, true);
+  run(A, sn + 0.82, 650, 0.3);
+  const j0 = sn + 1.15, cut = j0 + 0.6, rel = cut + 0.4;
+  groove(la, cut);
+  camTo(j0, 0.45, { x: 700, y: 650, z: 1.8, r: 2 });
+  bars(j0, true);
+  tl.to('#pillBlade rect', { fill: YELLOW, duration: 0.15 }, j0)
+    .set(A.jaws, { attr: { display: 'inline' } }, j0)
+    .to(A.jaws, { scale: 1, duration: 0.25, ease: 'back.out(3)' }, j0);
+  cue(j0, 'pop');
+  armRot(A, 'R', j0, -50, 0.2, 'back.out(2)');
+  armLen(A, 'R', j0, 44, 0.2);
+  [j0 + 0.15, j0 + 0.31].forEach(t => {
+    tl.to(A.jawT, { rotation: -28, duration: 0.09 }, t).to(A.jawB, { rotation: 28, duration: 0.09 }, t)
+      .to(A.jawT, { rotation: 0, duration: 0.06 }, t + 0.09).to(A.jawB, { rotation: 0, duration: 0.06 }, t + 0.09);
+    cue(t + 0.09, 'snip');
+  });
+  tl.to(A.jawT, { rotation: -34, duration: 0.1 }, j0 + 0.49).to(A.jawB, { rotation: 34, duration: 0.1 }, j0 + 0.49);
+  // 手臂一伸，剪刀尖正好落在 710 的位置
+  reach(A, 'R', cut - 0.06, 710, 690, { d: 0.06, ease: 'power3.in', off: 50 });
+  tl.to(A.jawT, { rotation: 0, duration: 0.04 }, cut).to(A.jawB, { rotation: 0, duration: 0.04 }, cut)
+    .to('#bladeLine', { opacity: 1, duration: 0.04 }, cut)
+    .to('#bladeLine', { opacity: 0, duration: 0.3 }, rel + 0.1)
+    .to('#clipBOutline', { opacity: 0, duration: 0.1 }, cut);
+  impact(cut);
+  focusLines(cut, rel - cut, { ...toScreen(712, 690), alpha: 0.85 });
+  sparks(710, 690, cut, { n: 14, len: 32, dist: 120 });
+  sfx('咔嚓！', 800, 590, cut, { size: 74, rot: -12, snd: 'shing', dur: 0.7 });
+  cue(cut, 'boom');
+  tl.to(look, { sat: 0.2, duration: 0.05 }, cut + 0.07).to(look, { sat: 1, duration: 0.2 }, rel);
+  tl.to('#clipBZzz', { x: 14, duration: 0.3, ease: 'back.out(3)' }, rel);
+  camTo(rel, 0.3, { x: 800, y: 600, z: 1.2, r: 0 }, 'power2.out');
+  bars(rel, false, 0.22);
+  face(A.brows, rel, false);
+  face(A.smile, rel + 0.05, true);
+  tl.to(A.jaws, { scale: 0, duration: 0.2 }, rel + 0.05)
+    .set(A.jaws, { attr: { display: 'none' } }, rel + 0.25)
+    .to('#pillBlade rect', { fill: CREAM, duration: 0.2 }, rel + 0.05);
+  armsReset(A, rel + 0.05, 0.4);
+
+  /* ---------- 镜头 10：伸手指一弹，把无聊片段弹飞 ---------- */
+  const f0 = rel + 0.15, kh = f0 + 0.28;
+  gaze(A, f0, 7, 5);
+  point(A, 'R', f0, true);
+  reach(A, 'R', f0, 736, 690, { d: 0.18, off: TIP + 14 });
+  tl.to(A.fingerR, { scaleX: 0.55, duration: 0.08 }, kh - 0.08)
+    .to(A.fingerR, { scaleX: 1.3, duration: 0.05, ease: 'power3.out' }, kh);
+  reach(A, 'R', kh, 790, 650, { d: 0.08, ease: 'power3.out', off: TIP });
+  tl.to('#clipBZzz', { x: 594, rotation: 420, duration: 1.0, ease: 'power1.out' }, kh)
+    .to('#clipBZzz', { y: -170, duration: 0.4, ease: 'power2.out' }, kh)
+    .to('#clipBZzz', { y: 480, duration: 0.6, ease: 'power2.in' }, kh + 0.4)
+    .to('#clipBZzz', { opacity: 0, duration: 0.2 }, kh + 0.8);
+  speedLines(kh, 0.35, 180, { alpha: 0.35 });
+  sparks(760, 690, kh, { n: 9, color: '#F28B82' });
+  shake(kh, 0.2, 8);
+  sfx('啪！', 790, 610, kh, { size: 56, rot: 10, color: '#F28B82', dur: 0.5, snd: 'kickHit' });
+  cue(kh + 0.05, 'whoosh', { d: 0.4 });
+  camTo(kh, 0.45, { x: 900, y: 560, z: 1.15 });
+  armsReset(A, kh + 0.2, 0.4);
+  say('拜拜～', 668, 578, kh + 0.2, 0.4);
+  face(A.smile, kh + 0.6, false);
+
+  /* ---------- 镜头 11：伸长胳膊去素材库拿转场 → 举着 → 砸进接缝 ---------- */
+  const tr = kh + 0.55;
+  gaze(A, tr, -7, -6);
+  say('拿转场！', 630, 578, tr + 0.05, 0.45, { dir: -1 });
+  whip(tr + 0.25, 0.55, { x: 400, y: 470, z: 1.25 }, 0);
+  run(A, tr + 0.35, 530, 0.3);
+  const TR = [155, 348], gr0 = tr + 0.98;
+  gaze(A, tr + 0.68, -7, -7);
+  reach(A, 'L', tr + 0.7, ...TR, { d: 0.28, ease: 'back.out(1.3)' });
+  cue(tr + 0.7, 'stretch');
+  grip(A, 'L', gr0, true);
+  tl.to('#binTrans', { scale: 1.1, duration: 0.1, yoyo: true, repeat: 1 }, gr0)
+    .set(A.held, { attr: { display: 'inline' }, rotation: -A.rot.L }, gr0)
+    .to(A.held, { scale: 1, duration: 0.25, ease: 'back.out(2.5)' }, gr0);
+  cue(gr0, 'pickup');
+  // 收回来举过头顶（卡片保持竖直）
+  const hold = gr0 + 0.18;
+  armRot(A, 'L', hold, 90, 0.4, 'back.out(1.4)', true);
+  armLen(A, 'L', hold, 58, 0.4, 'back.out(1.4)');
+  grip(A, 'L', hold, false);
+  cue(hold, 'retract');
+  face(A.grin, hold, true);
+  gaze(A, hold + 0.3, -5, 4);
+  camTo(hold + 0.3, 0.45, { x: 520, y: 600, z: 1.35 });
+  // 蓄力 → 一手拍进接缝
+  const slam = hold + 0.8;
+  armRot(A, 'L', slam - 0.22, 60, 0.18, 'power2.out', true);
+  reach(A, 'L', slam - 0.07, 470, 672, { d: 0.07, ease: 'power3.in', upright: true });
+  tl.to(A.held, { scale: 0, duration: 0.15, ease: 'back.in(2)' }, slam)
+    .set(A.held, { attr: { display: 'none' } }, slam + 0.16)
+    .to('#transMark', { scale: 1, duration: 0.45, ease: 'back.out(3)' }, slam + 0.05);
+  tl.to(A.squash, { scaleX: 1.15, scaleY: 0.86, duration: 0.06 }, slam)
+    .to(A.squash, { scaleX: 1, scaleY: 1, duration: 0.35, ease: 'elastic.out(1, 0.4)' }, slam + 0.06);
+  face(A.grin, slam, false);
+  face(A.smile, slam, true);
+  sparks(470, 690, slam + 0.05, { n: 12, dist: 100 });
+  glow(470, 690, slam + 0.05, 130);
+  shake(slam, 0.15, 6);
+  sfx('叮！', 470, 600, slam + 0.05, { size: 48, rot: 6, color: YELLOW, snd: 'ding' });
+  armsReset(A, slam + 0.22, 0.45);
+  face(A.smile, slam + 0.5, false);
+
+  /* ---------- 镜头 12：伸手按播放 → 看预览：灰灰的… ---------- */
+  const pv = slam + 0.45;
+  whip(pv, 0.5, { x: 990, y: 440, z: 1.2 }, 180);
+  run(A, pv + 0.02, 975, 0.45);
+  gaze(A, pv + 0.45, 3, -8);
+  const PV = [1010, 450];
+  point(A, 'R', pv + 0.5, true);
+  reach(A, 'R', pv + 0.5, ...PV, { d: 0.22, ease: 'back.out(1.4)', off: TIP + 22 });
+  cue(pv + 0.5, 'stretch');
+  const p0 = poke(A, 'R', pv + 0.75, ...PV);
+  tl.to('#btnPv', { scale: 0.7, transformOrigin: '50% 50%', duration: 0.05, yoyo: true, repeat: 1 }, p0);
+  cue(p0, 'click');
+  armsReset(A, p0 + 0.2, 0.4);
+  tl.to(ph, { x: 710, duration: 1.4, ease: 'none' }, p0 + 0.05);
+  camTo(p0 + 0.1, 1.3, { x: 1060, y: 380, z: 1.32 }, 'sine.inOut');
+  blink(A, p0 + 0.55);
+  gaze(A, p0 + 0.8, 2, -8);
+  face(A.mouthO, p0 + 0.95, true);
+  face(A.mouthO, p0 + 1.3, false);
+  // 画面偏灰：一脸嫌弃
+  tl.to([A.eyeL, A.eyeR], { scaleY: 0.45, duration: 0.15 }, p0 + 1.35);
+  face(A.sweat, p0 + 1.35, true);
+  say('灰灰的…', 1000, 578, p0 + 1.4, 0.6);
+  tl.to([A.eyeL, A.eyeR], { scaleY: 1, duration: 0.15 }, p0 + 2.0);
+  face(A.sweat, p0 + 2.0, false);
+
+  /* ---------- 镜头 13：调色！拨滑杆 → 亮度一把拉满 → 亮瞎眼 → 戴墨镜救场 ---------- */
+  const G0 = p0 + 2.05;
+  whip(G0, 0.55, { x: 700, y: 375, z: 1.2 }, 0);
+  gaze(A, G0, -7, -6);
+  face(A.brows, G0, true);
+  const lg = jump(A, G0, { x: 650, y: 492, h: 170, d: 0.55 });
+  puffs(650, 492, lg, 0.8);
+  // 戳“调色”标签
+  const TAB = [214, 132];
+  point(A, 'L', lg + 0.1, true);
+  reach(A, 'L', lg + 0.1, ...TAB, { d: 0.25, ease: 'back.out(1.3)', off: TIP + 22 });
+  cue(lg + 0.1, 'stretch');
+  const tp = poke(A, 'L', lg + 0.38, ...TAB);
+  cue(tp, 'click');
+  tl.to('#tabGradeBg', { fill: YELLOW, duration: 0.1 }, tp)
+    .to('#tabGradeTx', { fill: INK, duration: 0.1 }, tp)
+    .to('#tabBin', { fill: '#8A857C', duration: 0.1 }, tp)
+    .to('#binTiles', { opacity: 0, duration: 0.15 }, tp)
+    .fromTo('#gradePanel', { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.3, ease: 'back.out(2)', immediateRender: false }, tp + 0.1);
+  cue(tp + 0.1, 'pop');
+  point(A, 'L', tp + 0.2, false);
+  // 滑杆：伸手抓住当前位置的旋钮 → 拖到目标值
+  const knobAt = Object.fromEntries(SLIDERS.map(sl => [sl.key, sl.from]));
+  const slider = (i, at, to, d, ease = 'power2.inOut') => {
+    const sl = SLIDERS[i];
+    reach(A, 'L', at, knobAt[sl.key], sl.y, { d: 0.18 });
+    grip(A, 'L', at + 0.18, true);
+    tl.to(`#${sl.id} circle`, { scale: 1.2, transformOrigin: '50% 50%', duration: 0.08 }, at + 0.18);
+    cue(at + 0.18, 'tick', { p: 1 });
+    reach(A, 'L', at + 0.24, to, sl.y, { d, ease });
+    tl.to(gr, { [sl.key]: to, duration: d, ease }, at + 0.24);
+    cue(at + 0.24, 'slide', { d });
+    grip(A, 'L', at + 0.24 + d, false);
+    tl.to(`#${sl.id} circle`, { scale: 1, duration: 0.2, ease: 'back.out(3)' }, at + 0.24 + d);
+    knobAt[sl.key] = to;
+    return at + 0.24 + d;
+  };
+  const e1 = slider(0, tp + 0.25, 520, 0.4);
+  sfx('暖！', 560, 172, e1 - 0.1, { size: 34, rot: -6, color: '#F2A65A', dur: 0.5 });
+  const e2 = slider(1, e1 + 0.08, 520, 0.4);
+  sfx('艳！', 560, 272, e2 - 0.1, { size: 34, rot: 6, color: RED, dur: 0.5 });
+  // 调上头了：嘿嘿一笑，亮度一把拉到底
+  const gd = e2 + 0.05;
+  face(A.grin, gd, true);
+  gaze(A, gd, 8, -6);
+  say('再亮点！', 690, 420, gd, 0.45, { size: 24 });
+  const gl = slider(2, gd + 0.12, 580, 0.13, 'power3.in');
+  cue(gl, 'glare');
+  tl.to('#raysGlare', { opacity: 1, scale: 1, duration: 0.25, ease: 'back.out(1.4)' }, gl)
+    .to('#raysGlare', { rotation: 40, duration: 2.2, ease: 'none' }, gl)
+    .to(look, { bri: 2.5, duration: 0.05 }, gl)
+    .to(look, { bri: 1.4, duration: 0.5, ease: 'power2.out' }, gl + 0.08)
+    .set('#flash', { opacity: 0.95 }, gl)
+    .to('#flash', { opacity: 0, duration: 0.55, ease: 'power2.out' }, gl + 0.04);
+  glow(1092, 272, gl, 560);
+  shake(gl, 0.5, 18);
+  camTo(gl, 0.05, { z: 1.38 }, 'power2.out');
+  camTo(gl + 0.06, 0.4, { z: 1.2 }, 'power2.out');
+  sfx('亮瞎了！！', 420, 330, gl + 0.05, { size: 64, rot: -8, color: YELLOW, dur: 1.1 });
+  // 被强光掀飞：眯成 > <，双手乱挥
+  face(A.grin, gl, false);
+  face(A.brows, gl, false);
+  squint(A, gl, true);
+  face(A.mouthO, gl, true);
+  face(A.sweat, gl + 0.1, true);
+  grip(A, 'L', gl, false);
+  arms(A, gl, 70, -70, 0.12);
+  armLen(A, 'L', gl + 0.02, 46, 0.2, 'back.out(2)');
+  armLen(A, 'R', gl, 46, 0.2, 'back.out(2)');
+  tl.to(A.armL, { rotation: '+=28', duration: 0.09, yoyo: true, repeat: 5, ease: 'sine.inOut' }, gl + 0.12)
+    .to(A.armR, { rotation: '-=28', duration: 0.09, yoyo: true, repeat: 5, ease: 'sine.inOut' }, gl + 0.12);
+  tl.to(A.root, { x: 575, duration: 0.35, ease: 'power3.out' }, gl)
+    .to(A.hop, { rotation: -24, y: -40, duration: 0.17, ease: 'power2.out' }, gl)
+    .to(A.hop, { y: 0, duration: 0.17, ease: 'power2.in' }, gl + 0.17)
+    .to(A.hop, { rotation: 0, duration: 0.5, ease: 'elastic.out(1, 0.4)' }, gl + 0.4);
+  A.x = 575;
+  land(A, gl + 0.34);
+  // 手往头顶一摸，变出墨镜“啪”地戴上
+  const sg = gl + 0.85;
+  armRot(A, 'R', sg - 0.16, -95, 0.14, 'back.out(2)');
+  armLen(A, 'R', sg - 0.16, 52, 0.14);
+  armRot(A, 'L', sg - 0.16, 20, 0.14);
+  tl.set(A.shades, { opacity: 1, x: 40, y: -60, rotation: 25 }, sg)
+    .to(A.shades, { x: 0, y: 0, rotation: 0, duration: 0.22, ease: 'back.out(2.2)' }, sg);
+  armsReset(A, sg + 0.1, 0.35);
+  face(A.squint, sg + 0.18, false);
+  face(A.mouthO, sg + 0.18, false);
+  face(A.smile, sg + 0.2, true);
+  face(A.sweat, sg + 0.2, false);
+  cue(sg + 0.2, 'shades');
+  sfx('★', 598, 432, sg + 0.24, { size: 24, rot: 15, color: '#fff', dur: 0.35 });
+  sfx('酷～', 505, 400, sg + 0.3, { size: 34, rot: -8, color: BLUE, dur: 0.5 });
+  // 戴着墨镜把亮度拉回来，强光慢慢散掉
+  const fx0 = sg + 0.6;
+  const fe = slider(2, fx0, 445, 0.45);
+  tl.to('#raysGlare', { opacity: 0, scale: 0.6, duration: 0.45 }, fe - 0.45)
+    .to(look, { bri: 1, duration: 0.45 }, fe - 0.45);
+  sfx('刚刚好', 520, 372, fe - 0.1, { size: 32, rot: -6, color: MINT, dur: 0.55 });
+  armsReset(A, fe + 0.08, 0.45);
+  cue(fe + 0.08, 'retract');
+  // 墨镜推到头顶，星星眼
+  const ok = fe + 0.25;
+  tl.to(A.shades, { y: -26, rotation: -8, duration: 0.22, ease: 'back.out(2)' }, ok);
+  cue(ok, 'pop');
+  face(A.smile, ok, false);
+  gaze(A, ok, 8, -6);
+  face(A.squint, ok, false);
+  starEyes(A, ok + 0.05, true);
+  face(A.grin, ok + 0.05, true);
+  tl.to(A.blush, { opacity: 0.85, duration: 0.3 }, ok);
+  cue(ok + 0.05, 'sparkle');
+  glow(1092, 272, ok, 260);
+  say('好看！', 600, 420, ok + 0.12, 0.6);
+  hopInPlace(A, ok + 0.12, 36);
+  starEyes(A, ok + 0.8, false);
+  face(A.grin, ok + 0.8, false);
+  tl.to(A.blush, { opacity: 0.35, duration: 0.3 }, ok + 0.8);
+
+  /* ---------- 镜头 14：伸手点导出 → 进度飞涨 → 卡在 99% ---------- */
+  const x0 = ok + 0.85;
+  whip(x0, 0.6, { x: 1240, y: 480, z: 1.3 }, 180);
+  gaze(A, x0, 7, 3);
+  const l5 = jump(A, x0, { x: 1330, y: 650, h: 210, d: 0.6, spin: 360 });
+  const EXB = [1462, 522];
+  gaze(A, l5 + 0.08, 7, -5);
+  point(A, 'R', l5 + 0.1, true);
+  reach(A, 'R', l5 + 0.1, ...EXB, { d: 0.22, ease: 'back.out(1.4)', off: TIP + 22 });
+  cue(l5 + 0.1, 'stretch');
+  const xp = poke(A, 'R', l5 + 0.38, ...EXB, { hover: 30 });
+  tl.to('#btnExport', { scaleY: 0.66, duration: 0.08 }, xp)
+    .to('#btnExport', { scaleY: 1, duration: 0.5, ease: 'elastic.out(1, 0.35)' }, xp + 0.08);
+  sfx('导出！', 1350, 470, xp, { size: 50, rot: -8, snd: 'click' });
+  shake(xp, 0.15, 6);
+  armsReset(A, xp + 0.2, 0.45);
+  const dl = xp + 0.3;
+  tl.to('#dlg', { opacity: 1, scale: 1, duration: 0.4, ease: 'back.out(2)' }, dl);
+  cue(dl, 'whoosh', { d: 0.3 });
+  camTo(dl, 0.45, { x: 1000, y: 450, z: 1.15 });
+  gaze(A, dl + 0.2, -7, -4);
+  // 冲到 99%……然后卡住
+  const pr = dl + 0.4, PR = 1.3, stuck = pr + PR;
+  tl.to(ex, { p: 99, duration: PR, ease: 'power2.out' }, pr);
+  cue(pr, 'drumroll', { d: PR });
+  cue(pr, 'riser', { d: PR, v: 0.06 });
+  hopInPlace(A, pr + 0.15, 18);
+  hopInPlace(A, pr + 0.65, 24);
+  face(A.grin, pr + 0.15, true);
+  face(A.grin, stuck, false);
+  groove(rel, stuck);
+  cue(stuck, 'stall');
+  tl.to('#dlgPct', { fill: RED, duration: 0.1 }, stuck)
+    .to('#dlgBar', { fill: '#E9A27A', duration: 0.2 }, stuck);
+  // 99% 抖个不停
+  for (let t = stuck + 0.3; t < stuck + 3.6; t += 0.8) {
+    tl.to('#dlgPct', { keyframes: [3, -3, 2, -2, 0].map(x => ({ x, duration: 0.04 })) }, t);
+  }
+  const hm = stuck + 0.3;
+  face(A.mouthO, hm, true);
+  tl.to(A.eyes, { scaleY: 1.25, transformOrigin: '50% 50%', duration: 0.15 }, hm);
+  say('？', 1320, 572, hm, 0.55, { size: 32, snd: 'surprise' });
+  camTo(stuck, 0.5, { x: 1000, y: 450, z: 1.3 }, 'power2.out');
+  face(A.mouthO, hm + 0.6, false);
+  tl.to(A.eyes, { scaleY: 1, duration: 0.15 }, hm + 0.6);
+  // 伸长手指戳戳进度条：没反应
+  const BAR = [990, 391];
+  point(A, 'R', hm + 0.65, true);
+  reach(A, 'R', hm + 0.65, ...BAR, { d: 0.28, ease: 'back.out(1.3)', off: TIP + 22 });
+  cue(hm + 0.65, 'stretch');
+  [hm + 0.95, hm + 1.2].forEach(t => {
+    const hit = poke(A, 'R', t, ...BAR);
+    tl.to('#dlg', { x: -6, duration: 0.04, yoyo: true, repeat: 1 }, hit);
+    cue(hit, 'errBeep');
+  });
+  armsReset(A, hm + 1.5, 0.45);
+  cue(hm + 1.5, 'retract');
+  face(A.sweat, hm + 1.5, true);
+  // 气鼓鼓
+  const mad = hm + 1.85;
+  face(A.sweat, mad, false);
+  face(A.brows, mad, true);
+  tl.to(A.blush, { opacity: 1, duration: 0.2 }, mad)
+    .to(A.squash, { keyframes: [0, 1, 2, 3, 4, 5].map(i => ({ scaleX: 1 + (i % 2 ? 0.05 : -0.03), scaleY: 1 + (i % 2 ? -0.05 : 0.03), duration: 0.05 })).concat([{ scaleX: 1, scaleY: 1, duration: 0.05 }]) }, mad);
+  say('可恶…', 1320, 572, mad, 0.6, { snd: 'babble' });
+
+  /* ---------- 镜头 15：后撤蓄力 → 飞踢！→ 导出完成 ---------- */
+  const bk = mad + 0.7;
+  gaze(A, bk, -7, -3);
+  run(A, bk, 1430, 0.28);
+  const an = bk + 0.35, K0 = an + 0.65, KH = K0 + 0.2;
+  cue(stuck + 0.5, 'drone', { d: K0 - stuck - 0.5 });
+  camTo(an, 0.5, { x: 1250, y: 520, z: 1.55, r: -2 });
+  bars(an, true, 0.22);
+  tl.to('#vig', { opacity: 0.5, duration: 0.35 }, an);
+  tl.to(A.squash, { scaleX: 1.4, scaleY: 0.55, duration: 0.45, ease: 'power2.out' }, an)
+    .to(A.root, { keyframes: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(i => ({ x: 1430 + (i % 2 ? 3 : -3) * (i / 9), duration: 0.05 })).concat([{ x: 1430, duration: 0.02 }]) }, an + 0.1);
+  armRot(A, 'L', an, 45, 0.3, 'back.out(2)');
+  armRot(A, 'R', an, -45, 0.3, 'back.out(2)');
+  cue(an, 'riser', { d: 0.65 });
+  cue(an + 0.3, 'heartbeat');
+  sfx('！！', 1470, 560, an + 0.25, { size: 44, rot: 8, color: RED, dur: 0.4 });
+  // 飞踢：身子一横、腿伸长，直冲对话框右边
+  const KX = 1110, KY = 460;
+  tl.to(A.squash, { scaleX: 0.85, scaleY: 1.2, duration: 0.1 }, K0)
+    .to(A.squash, { scaleX: 1, scaleY: 1, duration: 0.1 }, K0 + 0.1)
+    .to(A.hop, { rotation: 90, duration: 0.14, ease: 'power2.out' }, K0)
+    .to([A.legsA, A.legsB], { scaleY: 2.1, duration: 0.14, ease: 'back.out(2)' }, K0 + 0.04)
+    .to(A.root, { x: KX, y: KY, duration: KH - K0, ease: 'power2.in' }, K0)
+    .to(A.shadow, { opacity: 0, duration: 0.1 }, K0);
+  armRot(A, 'L', K0, -30, 0.12);
+  armRot(A, 'R', K0, 30, 0.12);
+  speedLines(K0, KH - K0 + 0.05, 180, { n: 26, alpha: 0.55 });
+  cue(K0, 'whoosh', { d: 0.25 });
+  // 命中：顿帧 + 冲击帧 + 大震屏
+  impact(KH);
+  shake(KH, 0.6, 24);
+  focusLines(KH, 0.4, { ...toScreen(1070, 430), alpha: 0.9 });
+  glow(1065, 430, KH, 260);
+  sparks(1065, 430, KH, { n: 18, len: 36, dist: 150, w: 6 });
+  debris(1065, 430, KH, { n: 10, colors: [CREAM, ORANGE, GREY], size: 12, spread: 260, up: 180 });
+  sfx('砰！！', 1180, 330, KH, { size: 92, rot: -10, color: RED, dur: 0.9 });
+  cue(KH, 'kickHit');
+  cue(KH, 'boom');
+  cue(KH, 'crash');
+  tl.to(look, { sat: 0.15, duration: 0.03 }, KH + 0.07).to(look, { sat: 1, duration: 0.25 }, KH + 0.2);
+  camTo(KH, 0.04, { z: 1.7, r: 3 }, 'power2.out');
+  camTo(KH + 0.15, 0.55, { x: 800, y: 450, z: 1, r: 0 }, 'power3.out');
+  bars(KH + 0.15, false, 0.22);
+  tl.to('#vig', { opacity: 0, duration: 0.3 }, KH + 0.15);
+  // 头顶的墨镜被震飞
+  tl.set(A.shades, { opacity: 0 }, KH)
+    .set(flyShades, { opacity: 1 }, KH)
+    .to(flyShades, { x: 420, rotation: 900, duration: 0.9, ease: 'power1.out' }, KH)
+    .to(flyShades, { y: -1100, duration: 0.9, ease: 'power2.out' }, KH)
+    .set(flyShades, { opacity: 0 }, KH + 0.9);
+  cue(KH + 0.05, 'whoosh', { d: 0.5 });
+  // 对话框被踢得一歪，再弹回来
+  tl.to('#dlg', { x: -70, rotation: -7, duration: 0.08, ease: 'power3.out' }, KH)
+    .to('#dlg', { x: 0, rotation: 0, duration: 0.8, ease: 'elastic.out(1, 0.35)' }, KH + 0.12)
+    .to('#dlgPct', { fill: INK, duration: 0.05 }, KH)
+    .to('#dlgBar', { fill: ORANGE, duration: 0.05 }, KH)
+    .to(ex, { p: 100, duration: 0.12, ease: 'power2.out' }, KH + 0.04);
+  // 反弹回来翻个跟头落地
+  const rb = KH + 0.14, lr = rb + 0.5;
+  tl.to(A.root, { x: 1240, y: 650, duration: lr - rb, ease: 'none' }, rb)
+    .to(A.hop, { y: -150, duration: (lr - rb) / 2, ease: 'power2.out' }, rb)
+    .to(A.hop, { y: 0, duration: (lr - rb) / 2, ease: 'power2.in' }, rb + (lr - rb) / 2)
+    .to(A.hop, { rotation: 360 + 90, duration: lr - rb, ease: 'power1.out' }, rb)
+    .set(A.hop, { rotation: 0 }, lr)
+    .to([A.legsA, A.legsB], { scaleY: 1, duration: 0.25, ease: 'back.out(2)' }, rb)
+    .to(A.shadow, { opacity: 1, duration: 0.2 }, lr - 0.2);
+  armsReset(A, rb, 0.4);
+  land(A, lr);
+  puffs(1240, 650, lr, 1);
+  A.x = 1240; A.y = 650;
+
+  const done = KH + 0.3;
+  cue(done, 'chime');
+  tl.to('#dlgT1', { opacity: 0, duration: 0.1 }, done)
+    .to('#dlgT2', { opacity: 1, duration: 0.1 }, done + 0.05)
+    .to('#dlgPct', { opacity: 0, duration: 0.1 }, done)
+    .to('#dlgCheck', { opacity: 1, duration: 0.1 }, done + 0.05)
+    .to('#dlgCheckPath', { strokeDashoffset: 0, duration: 0.35, ease: 'power2.out' }, done + 0.1)
+    .to('#dlgBar', { fill: MINT, duration: 0.25 }, done)
+    .to('#raysExp', { opacity: 1, scale: 1, duration: 0.5, ease: 'back.out(1.6)' }, done)
+    .to('#raysExp', { opacity: 0.32, duration: 0.8 }, done + 0.9);
+  debris(800, 300, done + 0.05, { n: 44, colors: [ORANGE, YELLOW, BLUE, MINT, '#F28B82', '#C9B6F0'], size: 13, spread: 620, up: 280 });
+  cue(done + 0.05, 'confetti');
+  face(A.brows, lr, false);
+  tl.to(A.blush, { opacity: 0.35, duration: 0.3 }, lr);
+  starEyes(A, lr, true);
+
+  /* ---------- 镜头 16：翻到中间庆祝，墨镜从天而降，收尾 ---------- */
+  const c0 = lr + 0.3;
+  const l6 = jump(A, c0, { x: 800, y: 650, h: 210, d: 0.7, spin: -360 });
+  puffs(800, 650, l6, 1);
+  shake(l6, 0.15, 6);
+  starEyes(A, l6, false);
+  arms(A, l6 + 0.25, 60, -60, 0.25);
+  armLen(A, 'L', l6 + 0.25, 44, 0.25, 'back.out(2)');
+  armLen(A, 'R', l6 + 0.25, 44, 0.25, 'back.out(2)');
+  face(A.grin, l6 + 0.25, true);
+  tl.to(A.blush, { opacity: 0.9, duration: 0.3 }, l6 + 0.25);
+  hopInPlace(A, l6 + 0.2, 38);
+  camTo(l6, 1.1, { x: 800, y: 480, z: 1.12 }, 'sine.inOut');
+  gaze(A, l6 + 0.65, 0, 0);
+  const fin = l6 + 1.15;
+  groove(done + 0.2, fin + 1.6);
+  tl.set(A.shades, { opacity: 1, x: 0, y: -900, rotation: 0 }, fin - 0.5)
+    .to(A.shades, { y: 0, duration: 0.45, ease: 'bounce.out' }, fin - 0.5);
+  face(A.eyes, fin - 0.34, false);
+  cue(fin - 0.34, 'shades');
+  tl.to(A.squash, { scaleX: 1.12, scaleY: 0.9, duration: 0.06 }, fin - 0.34)
+    .to(A.squash, { scaleX: 1, scaleY: 1, duration: 0.35, ease: 'elastic.out(1, 0.4)' }, fin - 0.28);
+  say('搞定～', 822, 578, fin, 0, { snd: 'pop' });
+  sfx('★', 784, 598, fin + 0.05, { size: 26, rot: 15, color: '#fff', dur: 0 });
+  sfx('★', 700, 560, fin + 0.12, { size: 40, rot: 20, color: YELLOW, dur: 0 });
+  sfx('★', 968, 612, fin + 0.25, { size: 30, rot: -20, color: YELLOW, dur: 0 });
+  cue(fin, 'final');
+  END = fin + 1.8;
+  tl.to('#raysExp', { rotation: 50, duration: END - done, ease: 'none' }, done);
+
+  // 待机律动：身体跟着 BGM 的拍子一起一伏，任何时刻都“活着”
+  const BR = STEP * 2;
+  [D, A].forEach(c => tl.to(c.breath, {
+    scaleY: 1.045, scaleX: 0.972, duration: BR, repeat: Math.floor(END / BR) - 2, yoyo: true, ease: 'sine.inOut',
+  }, 0));
+  tl.to({}, { duration: 0.01 }, END - 0.01);
+  cues.sort((a, b) => a.t - b.t);
+}
+
+/* ============================================================
+ * 手绘抖动 & 播放控制
+ * ============================================================ */
+function startBoil() {
+  const noise = $('roughNoise');
+  let i = 0;
+  setInterval(() => noise.setAttribute('seed', [1, 7, 13][i++ % 3]), 140);
+}
+
+let started = false;
+function ensureStarted() {
+  audioInit();
+  if (started) return false;
+  started = true;
+  gsap.to('#intro', { opacity: 0, duration: 0.35, onComplete: () => $('intro').remove() });
+  return true;
+}
+
+function setupControls() {
+  const btnPlay = $('btnPlay'), seek = $('seek'), time = $('time'), btnMute = $('btnMute');
+  const total = tl.duration();
+  const sync = () => {
+    // seek/progress/restart 默认会抑制子补间回调，所以代理对象统一在这里渲染
+    renderAll();
+    seek.value = Math.round(tl.progress() * 1000);
+    time.textContent = `${tl.time().toFixed(1)}s / ${total.toFixed(0)}s`;
+    btnPlay.textContent = tl.paused() || tl.progress() === 1 ? '播放' : '暂停';
+    audioTick();
+  };
+  tl.eventCallback('onUpdate', sync);
+  tl.eventCallback('onComplete', sync);
+  const restart = () => { audioCut(); tl.restart(); sync(); };
+  const toggle = () => {
+    if (ensureStarted() || tl.progress() === 1) return restart();
+    tl.paused(!tl.paused());
+    if (tl.paused()) audioCut();
+    sync();
+  };
+  const jumpTo = t => { ensureStarted(); tl.pause(); audioCut(); tl.time(clamp(t, 0, total)); sync(); };
+  const toggleMute = () => {
+    AU.muted = !AU.muted;
+    if (AU.master) AU.master.gain.setTargetAtTime(AU.muted ? 0 : 0.85, AU.ctx.currentTime, 0.02);
+    btnMute.textContent = AU.muted ? '🔇' : '🔊';
+  };
+  $('btnStart').onclick = () => { ensureStarted(); restart(); };
+  btnPlay.onclick = toggle;
+  $('btnReplay').onclick = () => { ensureStarted(); restart(); };
+  seek.oninput = () => jumpTo(seek.value / 1000 * total);
+  btnMute.onclick = toggleMute;
+  $('speed').onchange = e => tl.timeScale(+e.target.value);
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); toggle(); }
+    if (e.key === 'r' || e.key === 'R') $('btnReplay').click();
+    if (e.key === 'm' || e.key === 'M') toggleMute();
+    if (e.key === 'ArrowRight') jumpTo(tl.time() + 1);
+    if (e.key === 'ArrowLeft') jumpTo(tl.time() - 1);
+  });
+  sync();
+}
+
+const fontReady = Promise.race([
+  document.fonts.load('30px "ZCOOL KuaiLe"', '剪辑小螃蟹').catch(() => {}),
+  new Promise(r => setTimeout(r, 1500)),
+]);
+fontReady.then(() => {
+  build();
+  startBoil();
+  setupControls();
+});
+</script>
+</body>
+</html>
